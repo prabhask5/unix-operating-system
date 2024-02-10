@@ -19,9 +19,36 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
    * include it in your final submission.
    */
 
+  // TODO parse and validate syscall args, call syscalls
+  // https://cs162.org/static/proj/proj-userprog/docs/tasks/process-control-syscalls/
+  // https://cs162.org/static/proj/proj-userprog/docs/tasks/file-operation-syscalls/
+
+  // int practice (int i)
+  // void halt (void)
+  // void exit (int status)
+  // pid_t exec (const char *cmd_line)
+  //    See pid_t process_execute(const char* file_name)
+  // int wait (pid_t pid)
+  //    See int process_wait(pid_t child_pid UNUSED)
+
+  // File syscalls (Wrap in global lock for project 1)
+  // bool create (const char *file, unsigned initial_size)
+  // bool remove (const char *file)
+  // int open (const char *file)
+  // int filesize (int fd)
+  // int read (int fd, void *buffer, unsigned size)
+  // int write (int fd, const void *buffer, unsigned size)
+  // void seek (int fd, unsigned position)
+  // int tell(int fd)
+  // void close (int fd)
+
+  // Floating Point
+  // double compute_e (int n)
+
   /* printf("System call number: %d\n", args[0]); */
 
   if (args[0] == SYS_EXIT) {
+    // TODO Update child process exit status
     f->eax = args[1];
     printf("%s: exit(%d)\n", thread_current()->pcb->process_name, args[1]);
     process_exit();

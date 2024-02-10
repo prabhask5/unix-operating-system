@@ -66,6 +66,11 @@ pid_t process_execute(const char* file_name) {
   tid = thread_create(file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page(fn_copy);
+
+  // TODO Intialize shared datastructure for monitoring process return status
+  // process_wait should be able to wait on this datastructure
+  // shared data should automatically deallocate once ref_cnt == 0
+
   return tid;
 }
 
@@ -140,6 +145,9 @@ static void start_process(void* file_name_) {
    does nothing. */
 int process_wait(pid_t child_pid UNUSED) {
   sema_down(&temporary);
+  // TODO waits for shared data to become available
+  // Use PCB of the child process
+  // Retreive data from child PCB and modify so wait can only be called once
   return 0;
 }
 
@@ -276,6 +284,8 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
   bool success = false;
   int i;
 
+  // TODO PARSE ARGUMENTS
+
   /* Allocate and activate page directory. */
   t->pcb->pagedir = pagedir_create();
   if (t->pcb->pagedir == NULL)
@@ -350,6 +360,9 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
   /* Set up stack. */
   if (!setup_stack(esp))
     goto done;
+
+  // TODO ADD ARGUMENTS TO STACK HERE
+  // See https://cs162.org/static/proj/pintos-docs/docs/userprog/program-startup/
 
   /* Start address. */
   *eip = (void (*)(void))ehdr.e_entry;

@@ -3,4 +3,6 @@
 
 void syscall_init(void);
 
+// TODO define syscall functions
+
 #endif /* userprog/syscall.h */
