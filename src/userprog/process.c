@@ -420,9 +420,9 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
     ++argc;
   } while ((token = strtok_r(NULL, " ", &saveptr)) != NULL);
 
-  // Stack align until esp + 4 * argc + 12 is divisible by 16
-  // zero pad = (esp + 4 * argc + 12) % 16
-  *esp = *esp - ((int)*esp + sizeof(argc) * argc + 12) % 16;
+  // Stack align until esp + 4 * argc - 12 is divisible by 16
+  // zero pad = (esp + 4 * argc - 12) % 16
+  *esp = *esp - ((uint32_t)*esp - sizeof(argc) * argc - 12) % 16;
 
   // Push null ptr to stack
   *esp = *esp - sizeof(NULL);
