@@ -2,6 +2,8 @@
 #define USERPROG_PROCESS_H
 
 #include "threads/thread.h"
+#include "filesys/directory.h"
+#include "filesys/file.h"
 #include <stdint.h>
 
 // At most 8MB can be allocated to the stack
@@ -17,6 +19,18 @@ typedef tid_t pid_t;
 typedef void (*pthread_fun)(void*);
 typedef void (*stub_fun)(pthread_fun, void*);
 
+/* An open file. */
+// NOTE: this was copied from file.c to be accessible in process.c
+// I do not know why this was in file.c but this might break some abstraction barriers that we weren't supposed to break
+struct file_descriptor_elem {
+  char name[NAME_MAX];
+  struct file f;
+  struct list_elem elem;
+};
+
+/* Adds a new file description entry */
+struct file_descriptor_elem* create_file_descriptor(const char* name, struct list* fdt);
+
 //  TODO Add shared data for traking process exit status for exec, wait, and exit
 
 /* The process control block for a given process. Since
@@ -29,6 +43,7 @@ struct process {
   uint32_t* pagedir;          /* Page directory. */
   char process_name[16];      /* Name of the main thread */
   struct thread* main_thread; /* Pointer to main thread */
+  struct list fdt;            /* List for the file descriptor table */
   // TODO add shared data for tracking children exit status and parent wait calls
 };
 

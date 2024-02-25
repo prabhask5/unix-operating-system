@@ -74,6 +74,29 @@ pid_t process_execute(const char* file_name) {
   return tid;
 }
 
+/* Adds a new file description entry */
+struct file_descriptor_elem* create_file_descriptor(const char* name, struct list* fdt) {
+  struct file_descriptor_elem* fd = malloc(sizeof(struct file_descriptor_elem));
+  if (fd != NULL) {
+    strlcpy(fd->name, name, strlen(name) + 1);
+    memset(&fd->f, 0, sizeof(fd->f));
+    list_push_back(fdt, &fd->elem);
+  }
+  return fd;
+}
+
+void fdt_destroy(struct list* fdt) {
+  struct file_descriptor_elem* fd;
+  struct list_elem* elem_to_remove;
+  for (struct list_elem* e = list_begin(fdt); e != list_end(fdt);) {
+    fd = list_entry(e, struct file_descriptor_elem, elem);
+    elem_to_remove = e;
+    e = list_next(e);
+    list_remove(elem_to_remove);
+    free(fd);
+  }
+}
+
 /* A thread function that loads a user process and starts it
    running. */
 static void start_process(void* file_name_) {
@@ -96,6 +119,13 @@ static void start_process(void* file_name_) {
     // Continue initializing the PCB as normal
     t->pcb->main_thread = t;
     strlcpy(t->pcb->process_name, t->name, sizeof t->name);
+
+    // Init the file descriptor table
+    // 0 - stdin, 1 - stdout, 2 - stderr
+    list_init(&t->pcb->fdt);
+    success = success && create_file_descriptor("stdin", &t->pcb->fdt) != NULL;
+    success = success && create_file_descriptor("stdout", &t->pcb->fdt) != NULL;
+    success = success && create_file_descriptor("stderr", &t->pcb->fdt) != NULL;
   }
 
   /* Initialize interrupt frame and load executable. */
@@ -114,6 +144,7 @@ static void start_process(void* file_name_) {
     // can try to activate the pagedir, but it is now freed memory
     struct process* pcb_to_free = t->pcb;
     t->pcb = NULL;
+    fdt_destroy(&t->pcb->fdt);
     free(pcb_to_free);
   }
 
@@ -177,6 +208,9 @@ void process_exit(void) {
     pagedir_activate(NULL);
     pagedir_destroy(pd);
   }
+
+  /* Free the file descriptor table and any file descriptors that are still open */
+  fdt_destroy(&cur->pcb->fdt);
 
   /* Free the PCB of this process and kill this thread
      Avoid race where PCB is freed before t->pcb is set to NULL
@@ -486,7 +520,8 @@ static bool setup_stack(void** esp) {
   if (kpage != NULL) {
     success = install_page(((uint8_t*)PHYS_BASE) - PGSIZE, kpage, true);
     if (success)
-      *esp = PHYS_BASE;
+      // TODO devise a better solution than proj0 pregame
+      *esp = PHYS_BASE - 0x14;
     else
       palloc_free_page(kpage);
   }

@@ -3,11 +3,18 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/synch.h"
 #include "userprog/process.h"
+
+// Global syscall lock
+struct lock syscall_lock;
 
 static void syscall_handler(struct intr_frame*);
 
-void syscall_init(void) { intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall"); }
+void syscall_init(void) {
+  lock_init(&syscall_lock);
+  intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
+}
 
 static void syscall_handler(struct intr_frame* f UNUSED) {
   uint32_t* args = ((uint32_t*)f->esp);
@@ -52,5 +59,34 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     f->eax = args[1];
     printf("%s: exit(%d)\n", thread_current()->pcb->process_name, args[1]);
     process_exit();
+  } else if (args[0] == SYS_PRACTICE) {
+    f->eax = args[1] + 1;
+  } else if (args[0] == SYS_WRITE) {
+    lock_acquire(&syscall_lock);
+    uint32_t bytes_written = 0;
+    struct list* fdt = &thread_current()->pcb->fdt;
+    // TODO validate args
+    if (args[1] < list_size(fdt)) {
+      // Get the entry and perform read / write
+      int i = 0;
+      struct file_descriptor_elem* fd;
+      for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
+        if (i == args[1]) {
+          fd = list_entry(e, struct file_descriptor_elem, elem);
+          break;
+        }
+        ++i;
+      }
+
+      // TODO generalize this to more file descriptors
+      if (strcmp(fd->name, "stdout") == 0 || strcmp(fd->name, "stderr") == 0) {
+        // TODO breakup large buffers
+        putbuf(args[2], args[3]);
+        bytes_written = args[3];
+      }
+    }
+    // Return number of bytes written
+    f->eax = bytes_written;
+    lock_release(&syscall_lock);
   }
 }
