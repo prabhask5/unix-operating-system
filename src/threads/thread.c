@@ -188,6 +188,8 @@ tid_t thread_create(const char* name, int priority, thread_func* function, void*
     return TID_ERROR;
 
   /* Initialize thread. */
+  // TODO change the name to only reflect the filename and not the arguments
+  // See HACK in process.c
   init_thread(t, name, priority);
   tid = t->tid = allocate_tid();
 

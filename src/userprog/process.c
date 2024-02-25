@@ -25,6 +25,7 @@ static thread_func start_process NO_RETURN;
 static thread_func start_pthread NO_RETURN;
 static bool load(const char* file_name, void (**eip)(void), void** esp);
 bool setup_thread(void (**eip)(void), void** esp);
+void fdt_destroy(struct list* fdt);
 
 /* Initializes user programs in the system by ensuring the main
    thread has a minimal PCB so that it can execute and wait for
@@ -318,18 +319,28 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
   bool success = false;
   int i;
 
-  // TODO PARSE ARGUMENTS
-
   /* Allocate and activate page directory. */
   t->pcb->pagedir = pagedir_create();
   if (t->pcb->pagedir == NULL)
     goto done;
   process_activate();
 
+  // Copy file_name so const is not violated
+  char* file_name_copy = malloc(strlen(file_name) + 1);
+  if (file_name_copy == NULL)
+    goto done;
+  memcpy(file_name_copy, file_name, strlen(file_name) + 1);
+  char* saveptr = NULL;
+  char* executable_name = strtok_r(file_name_copy, " ", &saveptr);
+  // HACK replace thread name with executable name
+  // TODO replace this with something better
+  strlcpy(t->name, executable_name, sizeof t->name);
+  strlcpy(t->pcb->process_name, executable_name, sizeof t->name);
+
   /* Open executable file. */
-  file = filesys_open(file_name);
+  file = filesys_open(executable_name);
   if (file == NULL) {
-    printf("load: %s: open failed\n", file_name);
+    printf("load: %s: open failed\n", executable_name);
     goto done;
   }
 
@@ -337,7 +348,7 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
   if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr ||
       memcmp(ehdr.e_ident, "\177ELF\1\1\1", 7) || ehdr.e_type != 2 || ehdr.e_machine != 3 ||
       ehdr.e_version != 1 || ehdr.e_phentsize != sizeof(struct Elf32_Phdr) || ehdr.e_phnum > 1024) {
-    printf("load: %s: error loading executable\n", file_name);
+    printf("load: %s: error loading executable\n", executable_name);
     goto done;
   }
 
@@ -397,6 +408,42 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
 
   // TODO ADD ARGUMENTS TO STACK HERE
   // See https://cs162.org/static/proj/pintos-docs/docs/userprog/program-startup/
+  char** tokens[50]; // Max tokens is 50 (TODO remove this constraint)
+  char* token = executable_name;
+  int argc = 0;
+  do {
+    *esp = *esp - strlen(token) * sizeof(char) - 1;
+    memcpy(*esp, token, strlen(token) + 1);
+    tokens[argc] = *esp;
+    ++argc;
+  } while ((token = strtok_r(NULL, " ", &saveptr)) != NULL);
+
+  // Stack align until esp + 4 * argc + 12 is divisible by 16
+  // zero pad = (esp + 4 * argc + 12) % 16
+  *esp = *esp - ((int)*esp + sizeof(argc) * argc + 12) % 16;
+
+  // Push null ptr to stack
+  *esp = *esp - sizeof(NULL);
+  memset(*esp, 0, sizeof(NULL));
+
+  // Push args to the stack in descending order
+  for (int i = argc - 1; i >= 0; --i) {
+    *esp = *esp - sizeof(tokens[i]);
+    memcpy(*esp, &tokens[i], sizeof(tokens[i]));
+  }
+
+  // Push argv** to the stack
+  void* argv = *esp;
+  *esp = *esp - sizeof(argv);
+  memcpy(*esp, &argv, sizeof(argv));
+
+  // Push argc to the stack
+  *esp = *esp - sizeof(argc);
+  memcpy(*esp, &argc, sizeof(argc));
+
+  // Push the dummy (null) resturn address to the stack
+  *esp = *esp - sizeof(NULL);
+  memset(*esp, 0, sizeof(NULL));
 
   /* Start address. */
   *eip = (void (*)(void))ehdr.e_entry;
@@ -405,6 +452,7 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
 
 done:
   /* We arrive here whether the load is successful or not. */
+  free(file_name_copy);
   file_close(file);
   return success;
 }
@@ -520,8 +568,7 @@ static bool setup_stack(void** esp) {
   if (kpage != NULL) {
     success = install_page(((uint8_t*)PHYS_BASE) - PGSIZE, kpage, true);
     if (success)
-      // TODO devise a better solution than proj0 pregame
-      *esp = PHYS_BASE - 0x14;
+      *esp = PHYS_BASE;
     else
       palloc_free_page(kpage);
   }
