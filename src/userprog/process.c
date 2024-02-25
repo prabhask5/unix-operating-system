@@ -184,9 +184,11 @@ int process_wait(pid_t child_pid UNUSED) {
 }
 
 /* Free the current process's resources. */
-void process_exit(void) {
+void process_exit(int exit_code) {
   struct thread* cur = thread_current();
   uint32_t* pd;
+
+  printf("%s: exit(%d)\n", thread_current()->pcb->process_name, exit_code);
 
   /* If this thread does not have a PCB, don't worry */
   if (cur->pcb == NULL) {
