@@ -10,6 +10,7 @@
 // These defines will be used in Project 2: Multithreading
 #define MAX_STACK_PAGES (1 << 11)
 #define MAX_THREADS 127
+#define MAX_ARGS 50
 
 /* PIDs and TIDs are the same type. PID should be
    the TID of the main thread of the process */

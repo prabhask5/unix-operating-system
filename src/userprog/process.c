@@ -406,9 +406,9 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
   if (!setup_stack(esp))
     goto done;
 
-  // TODO ADD ARGUMENTS TO STACK HERE
+  // ADD ARGUMENTS TO STACK
   // See https://cs162.org/static/proj/pintos-docs/docs/userprog/program-startup/
-  char** tokens[50]; // Max tokens is 50 (TODO remove this constraint)
+  char** tokens[MAX_ARGS]; // Max tokens
   char* token = executable_name;
   int argc = 0;
   do {
