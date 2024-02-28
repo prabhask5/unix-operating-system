@@ -7,6 +7,7 @@
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
 #include "threads/vaddr.h"
+#include "filesys/filesys.h"
 
 // Global syscall lock
 struct lock syscall_lock;
@@ -15,7 +16,7 @@ static void syscall_handler(struct intr_frame*);
 static bool is_valid_addr(void* addr);
 static bool syscall_validate_word(void* word);
 static bool syscall_validate_ptr(void** ptr);
-static bool syscall_validate_str(char* str);
+static bool syscall_validate_str(char* str_ptr);
 static size_t syscall_validate_buffer(void* buffer, size_t size);
 
 void syscall_init(void) {
@@ -57,13 +58,19 @@ static bool syscall_validate_ptr(void** ptr) {
 }
 
 /* Takes in a char* and validates all memory from str[0] to the first null pointer */
-static bool syscall_validate_str(char* str) {
+static bool syscall_validate_str(char* str_ptr) {
+
+  if (!is_valid_addr(str_ptr)) {
+    return false;
+  }
+
   int i = 0;
   do {
-    if (!is_valid_addr(str + i))
+    if (!is_valid_addr(str_ptr + i))
       return false;
     ++i;
-  } while (str[i] != '\0');
+  } while (str_ptr[i] != '\0');
+
   return true;
 }
 
@@ -80,6 +87,11 @@ static size_t syscall_validate_buffer(void* buffer, size_t size) {
       return i;
   }
   return size;
+}
+
+int generate_fid() {
+  static int cur_fid = 3;
+  return ++cur_fid;
 }
 
 static void syscall_handler(struct intr_frame* f UNUSED) {
@@ -127,7 +139,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
   }
 
   if (args[0] == SYS_EXIT) {
-    if (!syscall_validate_word(args + 4)) {
+    if (!syscall_validate_word(args + 1)) {
       process_exit(-1);
       return;
     }
@@ -137,7 +149,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
   }
 
   else if (args[0] == SYS_PRACTICE) {
-    if (!syscall_validate_word(args + 4)) {
+    if (!syscall_validate_word(args + 1)) {
       process_exit(-1);
       return;
     }
@@ -174,38 +186,311 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     // Verify buffer pointer and size are in valid user memory
     // fd, buffer, size
-    if (!syscall_validate_word(args + 4) || !syscall_validate_ptr(args + 8) ||
-        !syscall_validate_word(args + 12)) {
+    // if (!syscall_validate_word(args + 1) || !syscall_validate_ptr(args + 2) ||
+    //     !syscall_validate_word(args + 3)) {
+    //   process_exit(-1);
+    //   return;
+    // }
+    // int size = syscall_validate_buffer(args[2], args[3]);
+
+    // lock_acquire(&syscall_lock);
+    // uint32_t bytes_written = 0;
+
+    // if (args[1] == STDOUT_FILENO) {
+    //   // TODO breakup large buffers
+    //   putbuf(args[2], size);
+    //   bytes_written = size;
+    // } else {
+    //   struct list* fdt = &thread_current()->pcb->fdt;
+    //   struct file_descriptor_elem* fd = NULL;
+    //   for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
+    //     struct file_descriptor_elem* temp_fd = list_entry(e, struct file_descriptor_elem, elem);
+    //     if(temp_fd->id == args[1]) fd = temp_fd;
+    //   }
+    //   if(fd == NULL){
+
+    //     f->eax = -1;
+    //     lock_release(&syscall_lock);
+    //     return;
+    //   }
+
+    //   file_write(fd->f, args[2], args[3]);
+
+    // }
+
+    // // Return number of bytes written
+    // f->eax = bytes_written;
+    // lock_release(&syscall_lock);
+    // return;
+
+    // Verify buffer pointer and size are in valid user memory
+    // fd, buffer, size
+    if (!syscall_validate_word(args + 1) || !syscall_validate_ptr(args + 2) ||
+        !syscall_validate_word(args + 3)) {
       process_exit(-1);
       return;
     }
+
     int size = syscall_validate_buffer(args[2], args[3]);
 
     lock_acquire(&syscall_lock);
     uint32_t bytes_written = 0;
-    struct list* fdt = &thread_current()->pcb->fdt;
-    // TODO validate args
-    if (args[1] < list_size(fdt)) {
-      // Get the entry and perform read / write
-      int i = 0;
-      struct file_descriptor_elem* fd;
-      for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
-        if (i == args[1]) {
-          fd = list_entry(e, struct file_descriptor_elem, elem);
-          break;
-        }
-        ++i;
-      }
 
-      // TODO generalize this to more file descriptors
-      if (strcmp(fd->name, "stdout") == 0 || strcmp(fd->name, "stderr") == 0) {
-        // TODO breakup large buffers
-        putbuf(args[2], size);
-        bytes_written = size;
+    if (args[1] == STDOUT_FILENO) {
+      // TODO breakup large buffers
+      putbuf(args[2], size);
+      bytes_written = size;
+      f->eax = bytes_written;
+      lock_release(&syscall_lock);
+      return;
+    }
+
+    uint32_t bytes_read = 0;
+    struct list* fdt = &thread_current()->pcb->fdt;
+
+    // Get the entry and perform read / write
+
+    struct file_descriptor_elem* fd = NULL;
+    for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
+      struct file_descriptor_elem* temp_fd = list_entry(e, struct file_descriptor_elem, elem);
+      if (temp_fd->id == args[1])
+        fd = temp_fd;
+    }
+
+    if (fd == NULL) {
+      f->eax = -1;
+      lock_release(&syscall_lock);
+      return;
+    }
+
+    bytes_read = file_write(fd->f, args[2], size);
+
+    if (bytes_read == -1) {
+      f->eax = -1;
+      lock_release(&syscall_lock);
+      return;
+    }
+
+    // Return number of bytes written
+    f->eax = bytes_read;
+    lock_release(&syscall_lock);
+    return;
+
+  }
+
+  else if (args[0] == SYS_CREATE) {
+
+    // we want args[1] and args[2]
+    if (!syscall_validate_ptr(args + 1) || !syscall_validate_ptr(args + 2)) {
+      process_exit(-1);
+      return;
+    }
+
+    bool retval = filesys_create((char*)args[1], args[2]);
+
+    f->eax = retval;
+    return;
+
+  } else if (args[0] == SYS_REMOVE) {
+    // we want args[1]
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    int retval = filesys_remove(args[1]);
+    f->eax = retval;
+    return;
+  } else if (args[0] == SYS_OPEN) {
+
+    if (!syscall_validate_ptr(args + 1)) {
+      process_exit(-1);
+    }
+    lock_acquire(&syscall_lock);
+    struct file* file = filesys_open((char*)args[1]);
+
+    if (f == NULL) {
+      lock_release(&syscall_lock);
+      process_exit(-1);
+    }
+
+    struct file_descriptor_elem* fd = malloc(sizeof(struct file_descriptor_elem));
+
+    fd->f = file;
+    fd->id = generate_fid();
+
+    list_push_back(&thread_current()->pcb->fdt, &fd->elem);
+
+    lock_release(&syscall_lock);
+    f->eax = fd->id;
+    return;
+
+  } else if (args[0] == SYS_FILESIZE) {
+
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    int32_t len;
+
+    lock_acquire(&syscall_lock);
+
+    struct list* fdt = &thread_current()->pcb->fdt;
+    struct file_descriptor_elem* fd;
+
+    for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
+
+      fd = list_entry(e, struct file_descriptor_elem, elem);
+      if (args[1] == fd->id) {
+        len = file_length(fd->f);
       }
     }
-    // Return number of bytes written
-    f->eax = bytes_written;
+
     lock_release(&syscall_lock);
+
+    f->eax = len;
+    return;
+  } else if (args[0] == SYS_READ) {
+
+    // Verify buffer pointer and size are in valid user memory
+    // fd, buffer, size
+    if (!syscall_validate_word(args + 1) || !syscall_validate_ptr(args + 2) ||
+        !syscall_validate_word(args + 3)) {
+      process_exit(-1);
+      return;
+    }
+
+    int size = syscall_validate_buffer(args[2], args[3]);
+
+    lock_acquire(&syscall_lock);
+
+    uint32_t bytes_read = 0;
+    struct list* fdt = &thread_current()->pcb->fdt;
+
+    // Get the entry and perform read / write
+
+    struct file_descriptor_elem* fd = NULL;
+    for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
+      struct file_descriptor_elem* temp_fd = list_entry(e, struct file_descriptor_elem, elem);
+      if (temp_fd->id == args[1])
+        fd = temp_fd;
+    }
+
+    if (fd == NULL) {
+      f->eax = -1;
+      lock_release(&syscall_lock);
+      return;
+    }
+
+    if (args[1] == STDIN_FILENO) {
+      // TODO breakup large buffers
+      uint8_t key = input_getc();
+      bytes_read = 1;
+    } else {
+      bytes_read = file_read(fd->f, args[2], size);
+    }
+
+    if (bytes_read == -1) {
+      f->eax = -1;
+      lock_release(&syscall_lock);
+      return;
+    }
+
+    // Return number of bytes written
+    f->eax = bytes_read;
+    lock_release(&syscall_lock);
+    return;
+
+  } else if (args[0] == SYS_SEEK) {
+    if (!syscall_validate_word(args + 1) || !syscall_validate_word(args + 2)) {
+      process_exit(-1);
+      return;
+    }
+
+    lock_acquire(&syscall_lock);
+
+    struct list* fdt = &thread_current()->pcb->fdt;
+
+    struct file_descriptor_elem* fd = NULL;
+    for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
+      struct file_descriptor_elem* temp_fd = list_entry(e, struct file_descriptor_elem, elem);
+      if (temp_fd->id == args[1])
+        fd = temp_fd;
+    }
+
+    if (fd == NULL) {
+      f->eax = -1;
+      lock_release(&syscall_lock);
+      return;
+    }
+
+    file_seek(fd->f, args[2]);
+
+    lock_release(&syscall_lock);
+
+    return;
+  } else if (args[0] == SYS_TELL) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    lock_acquire(&syscall_lock);
+
+    struct list* fdt = &thread_current()->pcb->fdt;
+    struct file_descriptor_elem* fd = NULL;
+    for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
+      struct file_descriptor_elem* temp_fd = list_entry(e, struct file_descriptor_elem, elem);
+      if (temp_fd->id == args[1])
+        fd = temp_fd;
+    }
+
+    if (fd == NULL) {
+      f->eax = -1;
+      lock_release(&syscall_lock);
+      return;
+    }
+
+    int offset = file_tell(fd->f);
+
+    lock_release(&syscall_lock);
+
+    f->eax = offset;
+    return;
+
+  } else if (args[0] == SYS_CLOSE) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    lock_acquire(&syscall_lock);
+
+    struct list* fdt = &thread_current()->pcb->fdt;
+    struct file_descriptor_elem* fd = NULL;
+
+    struct list_elem* e = NULL;
+    for (e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
+
+      struct file_descriptor_elem* temp_fd = list_entry(e, struct file_descriptor_elem, elem);
+      if (temp_fd->id == args[1]) {
+        fd = temp_fd;
+        break;
+      }
+    }
+
+    if (fd == NULL) {
+      f->eax = -1;
+      lock_release(&syscall_lock);
+      return;
+    }
+
+    list_remove(e);
+    file_close(fd->f);
+    free(fd);
+
+    lock_release(&syscall_lock);
+    return;
   }
 }

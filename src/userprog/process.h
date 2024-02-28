@@ -25,7 +25,8 @@ typedef void (*stub_fun)(pthread_fun, void*);
 // I do not know why this was in file.c but this might break some abstraction barriers that we weren't supposed to break
 struct file_descriptor_elem {
   char name[NAME_MAX];
-  struct file f;
+  struct file* f;
+  int id;
   struct list_elem elem;
 };
 
