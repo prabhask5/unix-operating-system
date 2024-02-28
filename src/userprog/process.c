@@ -21,11 +21,17 @@
 #include "threads/vaddr.h"
 
 static struct semaphore temporary;
-static thread_func start_process NO_RETURN;
-static thread_func start_pthread NO_RETURN;
+static void start_process(void** args);
+static thread_func start_pthread;
 static bool load(const char* file_name, void (**eip)(void), void** esp);
 bool setup_thread(void (**eip)(void), void** esp);
 void fdt_destroy(struct list* fdt);
+
+struct shared_data* initialize_shared_data(void);
+int wait_for_data(struct shared_data* shared_data);
+void save_data(struct shared_data* shared_data, int data);
+process_exit_code_t* initialize_exit_code_data(struct process* pcb);
+struct shared_data* initialize_child_pid_data(struct process* pcb);
 
 /* Initializes user programs in the system by ensuring the main
    thread has a minimal PCB so that it can execute and wait for
@@ -34,6 +40,7 @@ void fdt_destroy(struct list* fdt);
 void userprog_init(void) {
   struct thread* t = thread_current();
   bool success;
+  // printf("userprog init");
 
   /* Allocate process control block
      It is imoprtant that this is a call to calloc and not malloc,
@@ -42,37 +49,73 @@ void userprog_init(void) {
      can come at any time and activate our pagedir */
   t->pcb = calloc(sizeof(struct process), 1);
   success = t->pcb != NULL;
+  t->pcb->main_thread = t;
+
+  list_init(&(t->pcb->children_exit_code_data));
+  success = success && initialize_exit_code_data(t->pcb) != NULL;
+  success = success && initialize_child_pid_data(t->pcb) != NULL;
 
   /* Kill the kernel if we did not succeed */
   ASSERT(success);
 }
 
-/* Starts a new thread running a user program loaded from
-   FILENAME.  The new thread may be scheduled (and may even exit)
-   before process_execute() returns.  Returns the new process's
-   process id, or TID_ERROR if the thread cannot be created. */
-pid_t process_execute(const char* file_name) {
-  char* fn_copy;
-  tid_t tid;
+struct shared_data* initialize_shared_data() {
+  struct shared_data* shared_data = (struct shared_data*)malloc(sizeof(struct shared_data));
+  if (shared_data == NULL)
+    return shared_data;
 
-  sema_init(&temporary, 0);
-  /* Make a copy of FILE_NAME.
-     Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page(0);
-  if (fn_copy == NULL)
-    return TID_ERROR;
-  strlcpy(fn_copy, file_name, PGSIZE);
+  sema_init(&shared_data->semaphore, 0);
+  lock_init(&shared_data->lock);
+  shared_data->ref_cnt = 2;
+  shared_data->data = -1;
 
-  /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create(file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page(fn_copy);
+  return shared_data;
+}
 
-  // TODO Intialize shared datastructure for monitoring process return status
-  // process_wait should be able to wait on this datastructure
-  // shared data should automatically deallocate once ref_cnt == 0
+int wait_for_data(struct shared_data* shared_data) {
+  sema_down(&shared_data->semaphore);
+  int data = shared_data->data;
+  lock_acquire(&shared_data->lock);
+  int ref_cnt = --shared_data->ref_cnt;
+  lock_release(&shared_data->lock);
+  if (ref_cnt == 0)
+    free(shared_data);
+  return data;
+}
 
-  return tid;
+void save_data(struct shared_data* shared_data, int data) {
+  shared_data->data = data;
+  sema_up(&shared_data->semaphore);
+  lock_acquire(&shared_data->lock);
+  int ref_cnt = --shared_data->ref_cnt;
+  lock_release(&shared_data->lock);
+  if (ref_cnt == 0)
+    free(shared_data);
+}
+
+process_exit_code_t* initialize_exit_code_data(struct process* pcb) {
+  process_exit_code_t* pec = (process_exit_code_t*)malloc(sizeof(process_exit_code_t));
+  if (pec == NULL)
+    return NULL;
+
+  struct shared_data* exit_code_data = initialize_shared_data();
+  if (exit_code_data == NULL)
+    return NULL;
+
+  pec->process_pid = pcb->main_thread->tid;
+  pec->shared_data = exit_code_data;
+
+  pcb->exit_code_data = pec;
+
+  return pec;
+}
+
+struct shared_data* initialize_child_pid_data(struct process* pcb) {
+  struct shared_data* child_pid_data = initialize_shared_data();
+  if (child_pid_data == NULL)
+    return NULL;
+  pcb->child_pid_data = child_pid_data;
+  return child_pid_data;
 }
 
 /* Adds a new file description entry */
@@ -98,10 +141,46 @@ void fdt_destroy(struct list* fdt) {
   }
 }
 
+/* Starts a new thread running a user program loaded from
+   FILENAME.  The new thread may be scheduled (and may even exit)
+   before process_execute() returns.  Returns the new process's
+   process id, or TID_ERROR if the thread cannot be created. */
+pid_t process_execute(const char* file_name) {
+  char* fn_copy;
+  tid_t tid;
+  // printf("Process execute has been called %s", file_name);
+
+  sema_init(&temporary, 0);
+  /* Make a copy of FILE_NAME.
+     Otherwise there's a race between the caller and load(). */
+  fn_copy = palloc_get_page(0);
+  if (fn_copy == NULL)
+    return TID_ERROR;
+  strlcpy(fn_copy, file_name, PGSIZE);
+
+  void* start_process_args[2];
+  start_process_args[0] = fn_copy;
+  start_process_args[1] = thread_current()->pcb;
+
+  /* Create a new thread to execute FILE_NAME. */
+  tid = thread_create(file_name, PRI_DEFAULT, start_process, start_process_args);
+  if (tid == TID_ERROR)
+    palloc_free_page(fn_copy);
+
+  // Intialize shared datastructure for monitoring process return status
+  // process_wait should be able to wait on this datastructure
+  // shared data should automatically deallocate once ref_cnt == 0
+
+  // for the initial process made in userprog_init, all the shared data is not initialized
+  return wait_for_data(thread_current()->pcb->child_pid_data);
+}
+
 /* A thread function that loads a user process and starts it
    running. */
-static void start_process(void* file_name_) {
-  char* file_name = (char*)file_name_;
+static void start_process(void** args) {
+  char* file_name = (char*)args[0];
+  struct process* parent_pcb = (struct process*)args[1];
+
   struct thread* t = thread_current();
   struct intr_frame if_;
   bool success, pcb_success;
@@ -123,10 +202,14 @@ static void start_process(void* file_name_) {
 
     // Init the file descriptor table
     // 0 - stdin, 1 - stdout, 2 - stderr
-    list_init(&t->pcb->fdt);
-    success = success && create_file_descriptor("stdin", &t->pcb->fdt) != NULL;
-    success = success && create_file_descriptor("stdout", &t->pcb->fdt) != NULL;
-    success = success && create_file_descriptor("stderr", &t->pcb->fdt) != NULL;
+    list_init(&(t->pcb->fdt));
+    success = success && create_file_descriptor("stdin", &(t->pcb->fdt)) != NULL;
+    success = success && create_file_descriptor("stdout", &(t->pcb->fdt)) != NULL;
+    success = success && create_file_descriptor("stderr", &(t->pcb->fdt)) != NULL;
+
+    list_init(&(t->pcb->children_exit_code_data));
+    success = success && initialize_exit_code_data(t->pcb) != NULL;
+    success = success && initialize_child_pid_data(t->pcb) != NULL;
   }
 
   /* Initialize interrupt frame and load executable. */
@@ -145,7 +228,13 @@ static void start_process(void* file_name_) {
     // can try to activate the pagedir, but it is now freed memory
     struct process* pcb_to_free = t->pcb;
     t->pcb = NULL;
-    fdt_destroy(&t->pcb->fdt);
+    fdt_destroy(&(pcb_to_free->fdt));
+    if (pcb_to_free->exit_code_data != NULL) {
+      free(pcb_to_free->exit_code_data->shared_data);
+      free(pcb_to_free->exit_code_data);
+    }
+    if (pcb_to_free->child_pid_data != NULL)
+      free(pcb_to_free->child_pid_data);
     free(pcb_to_free);
   }
 
@@ -153,7 +242,11 @@ static void start_process(void* file_name_) {
   palloc_free_page(file_name);
   if (!success) {
     sema_up(&temporary);
+    save_data(parent_pcb->child_pid_data, -1);
     thread_exit();
+  } else {
+    list_push_back(&(parent_pcb->children_exit_code_data), &(t->pcb->exit_code_data->elem));
+    save_data(parent_pcb->child_pid_data, t->tid);
   }
 
   /* Start the user process by simulating a return from an
@@ -175,12 +268,28 @@ static void start_process(void* file_name_) {
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
-int process_wait(pid_t child_pid UNUSED) {
+int process_wait(pid_t child_pid) {
   sema_down(&temporary);
-  // TODO waits for shared data to become available
+  // waits for shared data to become available
   // Use PCB of the child process
   // Retreive data from child PCB and modify so wait can only be called once
-  return 0;
+
+  struct list* children_data_list = &(thread_current()->pcb->children_exit_code_data);
+  process_exit_code_t* child_exit_code_data = NULL;
+
+  for (struct list_elem* e = list_begin(children_data_list); e != list_end(children_data_list);
+       e = list_next(e)) {
+    child_exit_code_data = list_entry(e, process_exit_code_t, elem);
+    if (child_exit_code_data->process_pid == child_pid) {
+      list_remove(e);
+      break;
+    }
+  }
+
+  if (child_exit_code_data != NULL)
+    return wait_for_data(child_exit_code_data->shared_data);
+  else
+    return -1;
 }
 
 /* Free the current process's resources. */
@@ -195,6 +304,8 @@ void process_exit(int exit_code) {
     thread_exit();
     NOT_REACHED();
   }
+
+  save_data(cur->pcb->exit_code_data->shared_data, exit_code);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -220,6 +331,9 @@ void process_exit(int exit_code) {
      If this happens, then an unfortuantely timed timer interrupt
      can try to activate the pagedir, but it is now freed memory */
   struct process* pcb_to_free = cur->pcb;
+  if (pcb_to_free->exit_code_data != NULL) {
+    free(pcb_to_free->exit_code_data);
+  }
   cur->pcb = NULL;
   free(pcb_to_free);
 

@@ -32,7 +32,20 @@ struct file_descriptor_elem {
 /* Adds a new file description entry */
 struct file_descriptor_elem* create_file_descriptor(const char* name, struct list* fdt);
 
-//  TODO Add shared data for traking process exit status for exec, wait, and exit
+//  Add shared data for traking process exit status for exec, wait, and exit
+struct shared_data {
+  struct semaphore semaphore;
+  struct lock lock;
+  int ref_cnt;
+  int data;
+};
+
+typedef struct process_exit_code {
+  pid_t process_pid;
+  struct shared_data* shared_data;
+  struct list_elem elem;
+
+} process_exit_code_t;
 
 /* The process control block for a given process. Since
    there can be multiple threads per process, we need a separate
@@ -45,7 +58,11 @@ struct process {
   char process_name[16];      /* Name of the main thread */
   struct thread* main_thread; /* Pointer to main thread */
   struct list fdt;            /* List for the file descriptor table */
-  // TODO add shared data for tracking children exit status and parent wait calls
+  process_exit_code_t*
+      exit_code_data; /* Contains current processes exit information (shared with parent pcb in children_exit_code_data) */
+  struct list children_exit_code_data; /* List of process_exit_code_t */
+  struct shared_data*
+      child_pid_data; /* Shared data of most recently spawned child to be used by process_wait */
 };
 
 void userprog_init(void);

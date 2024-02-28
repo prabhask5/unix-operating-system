@@ -131,9 +131,9 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       process_exit(-1);
       return;
     }
-    // TODO Update child process exit status
-    f->eax = args[1];
+
     process_exit(args[1]);
+    f->eax = args[1];
   }
 
   else if (args[0] == SYS_PRACTICE) {
@@ -142,6 +142,32 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       return;
     }
     f->eax = args[1] + 1;
+  }
+
+  else if (args[0] == SYS_HALT) {
+    shutdown_power_off();
+    process_exit(0);
+  }
+
+  else if (args[0] == SYS_EXEC) {
+    if (!syscall_validate_ptr(args + 4)) {
+      process_exit(-1);
+      return;
+    }
+
+    // process_execute will either return the child process id or -1 if the child process fails to load
+    pid_t cpid = process_execute(args[1]);
+    f->eax = cpid;
+  }
+
+  else if (args[0] == SYS_WAIT) {
+    if (!syscall_validate_word(args + 4)) {
+      process_exit(-1);
+      return;
+    }
+
+    int wait_output = process_wait(args[1]);
+    f->eax = wait_output;
   }
 
   else if (args[0] == SYS_WRITE) {
