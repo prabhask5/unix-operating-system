@@ -5,6 +5,7 @@
 #include "threads/thread.h"
 #include "threads/synch.h"
 #include "userprog/process.h"
+#include "userprog/pagedir.h"
 #include "threads/vaddr.h"
 
 // Global syscall lock
@@ -26,8 +27,7 @@ void syscall_init(void) {
   Validates the address for one byte of memory
 */
 static bool is_valid_addr(void* addr) {
-  return is_user_vaddr(addr) && addr > 0 &&
-         pagedir_get_page(thread_current()->pcb->pagedir, addr) != NULL;
+  return is_user_vaddr(addr) && pagedir_get_page(thread_current()->pcb->pagedir, addr) != NULL;
 }
 
 /*
@@ -63,7 +63,7 @@ static bool syscall_validate_str(char* str) {
     if (!is_valid_addr(str + i))
       return false;
     ++i;
-  } while (str[i] != "\0");
+  } while (str[i] != '\0');
   return true;
 }
 
@@ -72,7 +72,7 @@ Validates all memory from start of buffer to the end of the buffer
 (i.e. all memory between buffer[0] and buffer[size-1])
 If the valid buffer size is less than the size_t then
 
-TODO checkt to see if we can get away with only checking the first and last element
+TODO check to see if we can get away with only checking the first and last element
 */
 static size_t syscall_validate_buffer(void* buffer, size_t size) {
   for (size_t i = 0; i < size; i++) {
@@ -121,14 +121,14 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
   /* printf("System call number: %d\n", args[0]); */
 
   // Verify syscall id is located in valid user memory
-  if (!syscall_validate_ptr(&args[0])) {
-    kill(f);
+  if (!syscall_validate_word(args)) {
+    process_exit(-1);
     return;
   }
 
   if (args[0] == SYS_EXIT) {
-    if (!syscall_validate_ptr(&args[1])) {
-      kill(f);
+    if (!syscall_validate_word(args + 4)) {
+      process_exit(-1);
       return;
     }
     // TODO Update child process exit status
@@ -137,8 +137,8 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
   }
 
   else if (args[0] == SYS_PRACTICE) {
-    if (!syscall_validate_ptr(&args[1])) {
-      kill(f);
+    if (!syscall_validate_word(args + 4)) {
+      process_exit(-1);
       return;
     }
     f->eax = args[1] + 1;
@@ -148,9 +148,9 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     // Verify buffer pointer and size are in valid user memory
     // fd, buffer, size
-    if (!syscall_validate_ptr(&args[1]) || !syscall_validate_ptr(&args[2]) ||
-        !syscall_validate_ptr(&args[3])) {
-      kill(f);
+    if (!syscall_validate_word(args + 4) || !syscall_validate_ptr(args + 8) ||
+        !syscall_validate_word(args + 12)) {
+      process_exit(-1);
       return;
     }
     int size = syscall_validate_buffer(args[2], args[3]);
