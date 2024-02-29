@@ -1,6 +1,7 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include <float.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/synch.h"
@@ -461,5 +462,13 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     lock_release(&syscall_lock);
     return;
+  }
+
+  else if (args[0] == SYS_COMPUTE_E) {
+    if (args[1] < 0) {
+      process_exit(-1);
+      return;
+    }
+    f->eax = sys_sum_to_e(args[1]);
   }
 }
