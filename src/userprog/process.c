@@ -164,7 +164,7 @@ pid_t process_execute(const char* file_name) {
    running. */
 static void start_process(void** args) {
   char* file_name = (char*)args[0];
-  struct file* file = filesys_open(file_name); // note that I'm not error checking this
+
   struct process* parent_pcb = (struct process*)args[1];
   struct shared_data* child_pid_data = (struct shared_data*)args[2];
 
@@ -187,8 +187,8 @@ static void start_process(void** args) {
     t->pcb->main_thread = t;
     strlcpy(t->pcb->process_name, t->name, sizeof t->name);
 
-    t->pcb->spawn_file = file;
-    file_deny_write(file);
+    // t->pcb->spawn_file = file;
+    // file_deny_write(file);
 
     // Init the file descriptor table
     // 0 - stdin, 1 - stdout, 2 - stderr
@@ -240,6 +240,14 @@ static void start_process(void** args) {
     save_data(child_pid_data, -1);
     thread_exit();
   } else {
+
+    struct file* file = filesys_open(t->pcb->process_name);
+    t->pcb->spawn_file = file;
+
+    if (file != NULL) {
+      file_deny_write(file);
+    }
+
     list_push_back(&(parent_pcb->children_exit_code_data), &(t->pcb->exit_code_data->elem));
     save_data(child_pid_data, t->tid);
   }
@@ -312,8 +320,8 @@ void process_exit(int exit_code) {
 
   if (cur->pcb->spawn_file != NULL) {
     file_allow_write(cur->pcb->spawn_file);
-    file_close(cur->pcb->spawn_file); // not sure if I need to do this
-    cur->pcb->spawn_file = NULL;
+    file_close(cur->pcb->spawn_file);
+    cur->pcb->spawn_file = NULL; // Prevent dangling pointer
   }
 
   /* Free the file descriptor table and any file descriptors that are still open */
