@@ -144,6 +144,8 @@ pid_t process_execute(const char* file_name) {
   start_process_args[0] = fn_copy;
   start_process_args[1] = thread_current()->pcb;
 
+  // thread_current()->pcb->spawn_file = file_name;
+
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create(file_name, PRI_DEFAULT, start_process, start_process_args);
   if (tid == TID_ERROR)
@@ -161,6 +163,7 @@ pid_t process_execute(const char* file_name) {
    running. */
 static void start_process(void** args) {
   char* file_name = (char*)args[0];
+  struct file* file = filesys_open(file_name); // note that I'm not error checking this
   struct process* parent_pcb = (struct process*)args[1];
 
   struct thread* t = thread_current();
@@ -181,6 +184,9 @@ static void start_process(void** args) {
     // Continue initializing the PCB as normal
     t->pcb->main_thread = t;
     strlcpy(t->pcb->process_name, t->name, sizeof t->name);
+
+    t->pcb->spawn_file = file;
+    file_deny_write(file);
 
     // Init the file descriptor table
     // 0 - stdin, 1 - stdout, 2 - stderr
@@ -301,6 +307,12 @@ void process_exit(int exit_code) {
     cur->pcb->pagedir = NULL;
     pagedir_activate(NULL);
     pagedir_destroy(pd);
+  }
+
+  if (cur->pcb->spawn_file != NULL) {
+    file_allow_write(cur->pcb->spawn_file);
+    file_close(cur->pcb->spawn_file); // not sure if I need to do this
+    cur->pcb->spawn_file = NULL;
   }
 
   /* Free the file descriptor table and any file descriptors that are still open */

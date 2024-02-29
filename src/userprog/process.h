@@ -50,8 +50,9 @@ struct shared_data {
    of the process, which is `special`. */
 struct process {
   /* Owned by process.c. */
-  uint32_t* pagedir;          /* Page directory. */
-  char process_name[16];      /* Name of the main thread */
+  uint32_t* pagedir;     /* Page directory. */
+  char process_name[16]; /* Name of the main thread */
+  struct file* spawn_file;
   struct thread* main_thread; /* Pointer to main thread */
   struct list fdt;            /* List for the file descriptor table */
   struct shared_data*

@@ -186,45 +186,6 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     // Verify buffer pointer and size are in valid user memory
     // fd, buffer, size
-    // if (!syscall_validate_word(args + 1) || !syscall_validate_ptr(args + 2) ||
-    //     !syscall_validate_word(args + 3)) {
-    //   process_exit(-1);
-    //   return;
-    // }
-    // int size = syscall_validate_buffer(args[2], args[3]);
-
-    // lock_acquire(&syscall_lock);
-    // uint32_t bytes_written = 0;
-
-    // if (args[1] == STDOUT_FILENO) {
-    //   // TODO breakup large buffers
-    //   putbuf(args[2], size);
-    //   bytes_written = size;
-    // } else {
-    //   struct list* fdt = &thread_current()->pcb->fdt;
-    //   struct file_descriptor_elem* fd = NULL;
-    //   for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
-    //     struct file_descriptor_elem* temp_fd = list_entry(e, struct file_descriptor_elem, elem);
-    //     if(temp_fd->id == args[1]) fd = temp_fd;
-    //   }
-    //   if(fd == NULL){
-
-    //     f->eax = -1;
-    //     lock_release(&syscall_lock);
-    //     return;
-    //   }
-
-    //   file_write(fd->f, args[2], args[3]);
-
-    // }
-
-    // // Return number of bytes written
-    // f->eax = bytes_written;
-    // lock_release(&syscall_lock);
-    // return;
-
-    // Verify buffer pointer and size are in valid user memory
-    // fd, buffer, size
     if (!syscall_validate_word(args + 1) || !syscall_validate_ptr(args + 2) ||
         !syscall_validate_word(args + 3)) {
       process_exit(-1);
