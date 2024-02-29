@@ -65,13 +65,10 @@ static bool syscall_validate_str(char* str_ptr) {
   }
 
   int i = 0;
-  do {
-    if (!is_valid_addr(str_ptr + i))
-      return false;
+  while (is_valid_addr(str_ptr + i) && str_ptr[i] != '\0') {
     ++i;
-  } while (str_ptr[i] != '\0');
-
-  return true;
+  }
+  return is_valid_addr(str_ptr + i);
 }
 
 /* 
@@ -162,7 +159,8 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
   }
 
   else if (args[0] == SYS_EXEC) {
-    if (!syscall_validate_ptr(args + 1)) {
+    // if (!syscall_validate_word(args + 1) && !syscall_validate_str(*(args + 1))) {
+    if (!syscall_validate_ptr(args + 1) || !syscall_validate_str(*(args + 1))) {
       process_exit(-1);
       return;
     }

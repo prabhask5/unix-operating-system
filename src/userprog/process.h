@@ -58,8 +58,6 @@ struct process {
   struct shared_data*
       exit_code_data; /* Contains current processes exit information (shared with parent pcb in children_exit_code_data) */
   struct list children_exit_code_data; /* List of process_exit_code_t */
-  struct shared_data*
-      child_pid_data; /* Shared data of most recently spawned child to be used by process_wait */
 };
 
 void userprog_init(void);

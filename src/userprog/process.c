@@ -20,7 +20,6 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
-static struct semaphore temporary;
 static void start_process(void** args);
 static thread_func start_pthread;
 static bool load(const char* file_name, void (**eip)(void), void** esp);
@@ -132,7 +131,6 @@ pid_t process_execute(const char* file_name) {
   tid_t tid;
   // printf("Process execute has been called %s", file_name);
 
-  sema_init(&temporary, 0);
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page(0);
@@ -140,9 +138,12 @@ pid_t process_execute(const char* file_name) {
     return TID_ERROR;
   strlcpy(fn_copy, file_name, PGSIZE);
 
-  void* start_process_args[2];
+  struct shared_data* child_pid_data = initialize_shared_data(thread_current()->tid);
+
+  void* start_process_args[3];
   start_process_args[0] = fn_copy;
   start_process_args[1] = thread_current()->pcb;
+  start_process_args[2] = child_pid_data;
 
   // thread_current()->pcb->spawn_file = file_name;
 
@@ -156,7 +157,7 @@ pid_t process_execute(const char* file_name) {
   // shared data should automatically deallocate once ref_cnt == 0
 
   // for the initial process made in userprog_init, all the shared data is not initialized
-  return wait_for_data(thread_current()->pcb->child_pid_data);
+  return wait_for_data(child_pid_data);
 }
 
 /* A thread function that loads a user process and starts it
@@ -165,6 +166,7 @@ static void start_process(void** args) {
   char* file_name = (char*)args[0];
   struct file* file = filesys_open(file_name); // note that I'm not error checking this
   struct process* parent_pcb = (struct process*)args[1];
+  struct shared_data* child_pid_data = (struct shared_data*)args[2];
 
   struct thread* t = thread_current();
   struct intr_frame if_;
@@ -235,12 +237,11 @@ static void start_process(void** args) {
   /* Clean up. Exit on failure or jump to userspace */
   palloc_free_page(file_name);
   if (!success) {
-    sema_up(&temporary);
-    save_data(parent_pcb->child_pid_data, -1);
+    save_data(child_pid_data, -1);
     thread_exit();
   } else {
     list_push_back(&(parent_pcb->children_exit_code_data), &(t->pcb->exit_code_data->elem));
-    save_data(parent_pcb->child_pid_data, t->tid);
+    save_data(child_pid_data, t->tid);
   }
 
   /* Start the user process by simulating a return from an
@@ -326,7 +327,6 @@ void process_exit(int exit_code) {
   cur->pcb = NULL;
   free(pcb_to_free);
 
-  sema_up(&temporary);
   thread_exit();
 }
 
