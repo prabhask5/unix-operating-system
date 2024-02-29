@@ -27,13 +27,9 @@ static bool load(const char* file_name, void (**eip)(void), void** esp);
 bool setup_thread(void (**eip)(void), void** esp);
 void fdt_destroy(struct list* fdt);
 
-struct shared_data* initialize_shared_data(void);
+struct shared_data* initialize_shared_data(pid_t pid);
 int wait_for_data(struct shared_data* shared_data);
 void save_data(struct shared_data* shared_data, int data);
-process_exit_code_t* initialize_exit_code_data(struct process* pcb);
-struct shared_data* initialize_child_pid_data(struct process* pcb);
-int wait_for_exit_code(process_exit_code_t* exit_code_data);
-void save_exit_code(process_exit_code_t* exit_code_data, int exit_code);
 
 /* Initializes user programs in the system by ensuring the main
    thread has a minimal PCB so that it can execute and wait for
@@ -54,14 +50,22 @@ void userprog_init(void) {
   t->pcb->main_thread = t;
 
   list_init(&(t->pcb->children_exit_code_data));
-  success = success && initialize_exit_code_data(t->pcb) != NULL;
-  success = success && initialize_child_pid_data(t->pcb) != NULL;
+  struct shared_data* exit_code_data = initialize_shared_data(t->tid);
+  struct shared_data* child_pid_data = initialize_shared_data(t->tid);
+
+  success = success && exit_code_data != NULL;
+  success = success && child_pid_data != NULL;
+
+  if (exit_code_data != NULL)
+    t->pcb->exit_code_data = exit_code_data;
+  if (child_pid_data != NULL)
+    t->pcb->child_pid_data = child_pid_data;
 
   /* Kill the kernel if we did not succeed */
   ASSERT(success);
 }
 
-struct shared_data* initialize_shared_data() {
+struct shared_data* initialize_shared_data(pid_t pid) {
   struct shared_data* shared_data = (struct shared_data*)malloc(sizeof(struct shared_data));
   if (shared_data == NULL)
     return shared_data;
@@ -70,6 +74,7 @@ struct shared_data* initialize_shared_data() {
   lock_init(&shared_data->lock);
   shared_data->ref_cnt = 2;
   shared_data->data = -1;
+  shared_data->process_pid = pid;
 
   return shared_data;
 }
@@ -93,56 +98,6 @@ void save_data(struct shared_data* shared_data, int data) {
   lock_release(&shared_data->lock);
   if (ref_cnt == 0)
     free(shared_data);
-}
-
-int wait_for_exit_code(process_exit_code_t* exit_code_data) {
-  sema_down(&exit_code_data->shared_data->semaphore);
-  int data = exit_code_data->shared_data->data;
-  lock_acquire(&exit_code_data->shared_data->lock);
-  int ref_cnt = --exit_code_data->shared_data->ref_cnt;
-  lock_release(&exit_code_data->shared_data->lock);
-  if (ref_cnt == 0) {
-    free(exit_code_data->shared_data);
-    free(exit_code_data);
-  }
-  return data;
-}
-
-void save_exit_code(process_exit_code_t* exit_code_data, int exit_code) {
-  exit_code_data->shared_data->data = exit_code;
-  sema_up(&exit_code_data->shared_data->semaphore);
-  lock_acquire(&exit_code_data->shared_data->lock);
-  int ref_cnt = --exit_code_data->shared_data->ref_cnt;
-  lock_release(&exit_code_data->shared_data->lock);
-  if (ref_cnt == 0) {
-    free(exit_code_data->shared_data);
-    free(exit_code_data);
-  }
-}
-
-process_exit_code_t* initialize_exit_code_data(struct process* pcb) {
-  process_exit_code_t* pec = (process_exit_code_t*)malloc(sizeof(process_exit_code_t));
-  if (pec == NULL)
-    return NULL;
-
-  struct shared_data* exit_code_data = initialize_shared_data();
-  if (exit_code_data == NULL)
-    return NULL;
-
-  pec->process_pid = pcb->main_thread->tid;
-  pec->shared_data = exit_code_data;
-
-  pcb->exit_code_data = pec;
-
-  return pec;
-}
-
-struct shared_data* initialize_child_pid_data(struct process* pcb) {
-  struct shared_data* child_pid_data = initialize_shared_data();
-  if (child_pid_data == NULL)
-    return NULL;
-  pcb->child_pid_data = child_pid_data;
-  return child_pid_data;
 }
 
 /* Adds a new file description entry */
@@ -235,8 +190,16 @@ static void start_process(void** args) {
     success = success && create_file_descriptor("stderr", &(t->pcb->fdt)) != NULL;
 
     list_init(&(t->pcb->children_exit_code_data));
-    success = success && initialize_exit_code_data(t->pcb) != NULL;
-    success = success && initialize_child_pid_data(t->pcb) != NULL;
+    struct shared_data* exit_code_data = initialize_shared_data(t->tid);
+    struct shared_data* child_pid_data = initialize_shared_data(t->tid);
+
+    success = success && exit_code_data != NULL;
+    success = success && child_pid_data != NULL;
+
+    if (exit_code_data != NULL)
+      t->pcb->exit_code_data = exit_code_data;
+    if (child_pid_data != NULL)
+      t->pcb->child_pid_data = child_pid_data;
   }
 
   /* Initialize interrupt frame and load executable. */
@@ -256,10 +219,8 @@ static void start_process(void** args) {
     struct process* pcb_to_free = t->pcb;
     t->pcb = NULL;
     fdt_destroy(&(pcb_to_free->fdt));
-    if (pcb_to_free->exit_code_data != NULL) {
-      free(pcb_to_free->exit_code_data->shared_data);
+    if (pcb_to_free->exit_code_data != NULL)
       free(pcb_to_free->exit_code_data);
-    }
     if (pcb_to_free->child_pid_data != NULL)
       free(pcb_to_free->child_pid_data);
     free(pcb_to_free);
@@ -302,10 +263,10 @@ int process_wait(pid_t child_pid) {
 
   for (struct list_elem* e = list_begin(&thread_current()->pcb->children_exit_code_data);
        e != list_end(&thread_current()->pcb->children_exit_code_data); e = list_next(e)) {
-    process_exit_code_t* item = list_entry(e, process_exit_code_t, elem);
+    struct shared_data* item = list_entry(e, struct shared_data, elem);
     if (item->process_pid == child_pid) {
       list_remove(e);
-      int exit_code = wait_for_exit_code(item);
+      int exit_code = wait_for_data(item);
       return exit_code;
     }
   }
@@ -318,7 +279,7 @@ void process_exit(int exit_code) {
   uint32_t* pd;
 
   printf("%s: exit(%d)\n", thread_current()->pcb->process_name, exit_code);
-  save_exit_code(cur->pcb->exit_code_data, exit_code);
+  save_data(cur->pcb->exit_code_data, exit_code);
 
   /* If this thread does not have a PCB, don't worry */
   if (cur->pcb == NULL) {
