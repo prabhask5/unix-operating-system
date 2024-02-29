@@ -32,6 +32,8 @@ int wait_for_data(struct shared_data* shared_data);
 void save_data(struct shared_data* shared_data, int data);
 process_exit_code_t* initialize_exit_code_data(struct process* pcb);
 struct shared_data* initialize_child_pid_data(struct process* pcb);
+int wait_for_exit_code(process_exit_code_t* exit_code_data);
+void save_exit_code(process_exit_code_t* exit_code_data, int exit_code);
 
 /* Initializes user programs in the system by ensuring the main
    thread has a minimal PCB so that it can execute and wait for
@@ -91,6 +93,31 @@ void save_data(struct shared_data* shared_data, int data) {
   lock_release(&shared_data->lock);
   if (ref_cnt == 0)
     free(shared_data);
+}
+
+int wait_for_exit_code(process_exit_code_t* exit_code_data) {
+  sema_down(&exit_code_data->shared_data->semaphore);
+  int data = exit_code_data->shared_data->data;
+  lock_acquire(&exit_code_data->shared_data->lock);
+  int ref_cnt = --exit_code_data->shared_data->ref_cnt;
+  lock_release(&exit_code_data->shared_data->lock);
+  if (ref_cnt == 0) {
+    free(exit_code_data->shared_data);
+    free(exit_code_data);
+  }
+  return data;
+}
+
+void save_exit_code(process_exit_code_t* exit_code_data, int exit_code) {
+  exit_code_data->shared_data->data = exit_code;
+  sema_up(&exit_code_data->shared_data->semaphore);
+  lock_acquire(&exit_code_data->shared_data->lock);
+  int ref_cnt = --exit_code_data->shared_data->ref_cnt;
+  lock_release(&exit_code_data->shared_data->lock);
+  if (ref_cnt == 0) {
+    free(exit_code_data->shared_data);
+    free(exit_code_data);
+  }
 }
 
 process_exit_code_t* initialize_exit_code_data(struct process* pcb) {
@@ -275,9 +302,10 @@ int process_wait(pid_t child_pid) {
 
   for (struct list_elem* e = list_begin(&thread_current()->pcb->children_exit_code_data);
        e != list_end(&thread_current()->pcb->children_exit_code_data); e = list_next(e)) {
-    if (list_entry(e, process_exit_code_t, elem)->process_pid == child_pid) {
-      int exit_code = wait_for_data(list_entry(e, process_exit_code_t, elem)->shared_data);
+    process_exit_code_t* item = list_entry(e, process_exit_code_t, elem);
+    if (item->process_pid == child_pid) {
       list_remove(e);
+      int exit_code = wait_for_exit_code(item);
       return exit_code;
     }
   }
@@ -290,14 +318,13 @@ void process_exit(int exit_code) {
   uint32_t* pd;
 
   printf("%s: exit(%d)\n", thread_current()->pcb->process_name, exit_code);
+  save_exit_code(cur->pcb->exit_code_data, exit_code);
 
   /* If this thread does not have a PCB, don't worry */
   if (cur->pcb == NULL) {
     thread_exit();
     NOT_REACHED();
   }
-
-  save_data(cur->pcb->exit_code_data->shared_data, exit_code);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -323,9 +350,6 @@ void process_exit(int exit_code) {
      If this happens, then an unfortuantely timed timer interrupt
      can try to activate the pagedir, but it is now freed memory */
   struct process* pcb_to_free = cur->pcb;
-  if (pcb_to_free->exit_code_data != NULL) {
-    free(pcb_to_free->exit_code_data);
-  }
   cur->pcb = NULL;
   free(pcb_to_free);
 
