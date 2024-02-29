@@ -236,7 +236,14 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     lock_acquire(&syscall_lock);
     uint32_t bytes_written = 0;
 
-    if (args[1] == STDOUT_FILENO) {
+    if (args[1] == STDIN_FILENO) {
+      // TODO breakup large buffers
+
+      f->eax = -1;
+      lock_release(&syscall_lock);
+      return;
+
+    } else if (args[1] == STDOUT_FILENO) {
       // TODO breakup large buffers
       putbuf(args[2], size);
       bytes_written = size;
