@@ -269,27 +269,19 @@ static void start_process(void** args) {
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int process_wait(pid_t child_pid) {
-  sema_down(&temporary);
   // waits for shared data to become available
   // Use PCB of the child process
   // Retreive data from child PCB and modify so wait can only be called once
 
-  struct list* children_data_list = &(thread_current()->pcb->children_exit_code_data);
-  process_exit_code_t* child_exit_code_data = NULL;
-
-  for (struct list_elem* e = list_begin(children_data_list); e != list_end(children_data_list);
-       e = list_next(e)) {
-    child_exit_code_data = list_entry(e, process_exit_code_t, elem);
-    if (child_exit_code_data->process_pid == child_pid) {
+  for (struct list_elem* e = list_begin(&thread_current()->pcb->children_exit_code_data);
+       e != list_end(&thread_current()->pcb->children_exit_code_data); e = list_next(e)) {
+    if (list_entry(e, process_exit_code_t, elem)->process_pid == child_pid) {
+      int exit_code = wait_for_data(list_entry(e, process_exit_code_t, elem)->shared_data);
       list_remove(e);
-      break;
+      return exit_code;
     }
   }
-
-  if (child_exit_code_data != NULL)
-    return wait_for_data(child_exit_code_data->shared_data);
-  else
-    return -1;
+  return -1;
 }
 
 /* Free the current process's resources. */
