@@ -240,39 +240,37 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       // TODO breakup large buffers
       putbuf(args[2], size);
       bytes_written = size;
-      f->eax = bytes_written;
-      lock_release(&syscall_lock);
-      return;
+
+    } else {
+
+      struct list* fdt = &thread_current()->pcb->fdt;
+
+      // Get the entry and perform read / write
+
+      struct file_descriptor_elem* fd = NULL;
+      for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
+        struct file_descriptor_elem* temp_fd = list_entry(e, struct file_descriptor_elem, elem);
+        if (temp_fd->id == args[1])
+          fd = temp_fd;
+      }
+
+      if (fd == NULL) {
+        f->eax = -1;
+        lock_release(&syscall_lock);
+        return;
+      }
+
+      bytes_written = file_write(fd->f, args[2], size);
     }
 
-    uint32_t bytes_read = 0;
-    struct list* fdt = &thread_current()->pcb->fdt;
-
-    // Get the entry and perform read / write
-
-    struct file_descriptor_elem* fd = NULL;
-    for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
-      struct file_descriptor_elem* temp_fd = list_entry(e, struct file_descriptor_elem, elem);
-      if (temp_fd->id == args[1])
-        fd = temp_fd;
-    }
-
-    if (fd == NULL) {
-      f->eax = -1;
-      lock_release(&syscall_lock);
-      return;
-    }
-
-    bytes_read = file_write(fd->f, args[2], size);
-
-    if (bytes_read == -1) {
+    if (bytes_written == -1) {
       f->eax = -1;
       lock_release(&syscall_lock);
       return;
     }
 
     // Return number of bytes written
-    f->eax = bytes_read;
+    f->eax = bytes_written;
     lock_release(&syscall_lock);
     return;
 
@@ -281,12 +279,13 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
   else if (args[0] == SYS_CREATE) {
 
     // we want args[1] and args[2]
-    if (!syscall_validate_ptr(args + 1) || !syscall_validate_ptr(args + 2)) {
+    if (!syscall_validate_ptr(args + 1) || !syscall_validate_str(args + 1) ||
+        !syscall_validate_word(args + 2)) {
       process_exit(-1);
       return;
     }
 
-    bool retval = filesys_create((char*)args[1], args[2]);
+    bool retval = filesys_create(args[1], args[2]);
 
     f->eax = retval;
     return;
@@ -304,14 +303,18 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
   } else if (args[0] == SYS_OPEN) {
 
     if (!syscall_validate_ptr(args + 1)) {
+
       process_exit(-1);
+      return;
     }
     lock_acquire(&syscall_lock);
     struct file* file = filesys_open((char*)args[1]);
 
-    if (f == NULL) {
+    if (file == NULL) {
+
+      f->eax = -1;
       lock_release(&syscall_lock);
-      process_exit(-1);
+      return;
     }
 
     struct file_descriptor_elem* fd = malloc(sizeof(struct file_descriptor_elem));
