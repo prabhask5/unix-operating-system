@@ -162,7 +162,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
   }
 
   else if (args[0] == SYS_EXEC) {
-    if (!syscall_validate_ptr(args + 4)) {
+    if (!syscall_validate_ptr(args + 1)) {
       process_exit(-1);
       return;
     }
@@ -173,7 +173,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
   }
 
   else if (args[0] == SYS_WAIT) {
-    if (!syscall_validate_word(args + 4)) {
+    if (!syscall_validate_word(args + 1)) {
       process_exit(-1);
       return;
     }
