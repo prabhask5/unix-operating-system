@@ -208,11 +208,11 @@ tid_t thread_create(const char* name, int priority, thread_func* function, void*
   sf->eip = switch_entry;
   sf->ebp = 0;
 
-  // uint8_t curr_fpu_state[108];
-  // asm volatile("fsave (%0)" :: "g"(&curr_fpu_state) : "memory");
-  // asm volatile("finit");
-  // asm volatile("fsave (%0)" :: "g"(&sf->fpu) : "memory");
-  // asm volatile("frstor (%0)" :: "g"(&curr_fpu_state): "memory");
+  uint8_t curr_fpu_state[108];
+  asm volatile("fsave (%0)" ::"g"(&curr_fpu_state) : "memory");
+  asm volatile("finit");
+  asm volatile("fsave (%0)" ::"g"(&sf->fpu) : "memory");
+  asm volatile("frstor (%0)" ::"g"(&curr_fpu_state) : "memory");
 
   /* Add to run queue. */
   thread_unblock(t);

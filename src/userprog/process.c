@@ -217,6 +217,12 @@ static void start_process(void** args) {
     if_.cs = SEL_UCSEG;
     if_.eflags = FLAG_IF | FLAG_MBS;
     success = load(file_name, &if_.eip, &if_.esp);
+
+    uint8_t curr_fpu_state[108];
+    asm volatile("fsave (%0)" ::"g"(curr_fpu_state) : "memory");
+    asm volatile("finit");
+    asm volatile("fsave (%0)" ::"g"(&if_.fpu) : "memory");
+    asm volatile("frstor (%0)" ::"g"(curr_fpu_state) : "memory");
   }
 
   /* Handle failure with succesful PCB malloc. Must free the PCB */

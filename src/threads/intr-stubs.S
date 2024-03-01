@@ -25,13 +25,16 @@ intr_entry:
 	pushal
 
    /* TODO Save FPU registers */
+   subl $108, %esp
+	fsave (%esp)
+	fninit
 
 	/* Set up kernel environment. */
 	cld			/* String instructions go upward. */
 	mov $SEL_KDSEG, %eax	/* Initialize segment registers. */
 	mov %eax, %ds
 	mov %eax, %es
-	leal 56(%esp), %ebp	/* Set up frame pointer. */
+	leal 164(%esp), %ebp	/* Set up frame pointer. */
 
 	/* Call interrupt handler. */
 	pushl %esp
@@ -53,6 +56,8 @@ intr_entry:
 intr_exit:
 
    /* TODO Restore FPU registers */
+   frstor (%esp)
+   addl $108, %esp
 
 	/* Restore caller's registers. */
 	popal
