@@ -118,6 +118,7 @@ void fdt_destroy(struct list* fdt) {
     elem_to_remove = e;
     e = list_next(e);
     list_remove(elem_to_remove);
+    file_close(fd->f);
     free(fd);
   }
 }
