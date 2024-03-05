@@ -146,8 +146,6 @@ pid_t process_execute(const char* file_name) {
   start_process_args[1] = thread_current()->pcb;
   start_process_args[2] = child_pid_data;
 
-  // thread_current()->pcb->spawn_file = file_name;
-
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create(file_name, PRI_DEFAULT, start_process, start_process_args);
   if (tid == TID_ERROR)
@@ -187,9 +185,6 @@ static void start_process(void** args) {
     // Continue initializing the PCB as normal
     t->pcb->main_thread = t;
     strlcpy(t->pcb->process_name, t->name, sizeof t->name);
-
-    // t->pcb->spawn_file = file;
-    // file_deny_write(file);
 
     // Init the file descriptor table
     // 0 - stdin, 1 - stdout, 2 - stderr
