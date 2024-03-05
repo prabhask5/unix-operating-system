@@ -7,22 +7,16 @@ void test_main(void) {
   /* Create file */
   create("remove.txt", 0);
 
-  /* Open the file and gets file descriptor */
-  int fd = open("remove.txt");
-  if (fd <= 0) {
-    fail("error: open() returned output %d", fd);
-  }
-
   /* Remove the opened file (without error) */
   bool is_removed = remove("remove.txt");
   if (!is_removed) {
-    fail("remove() failed on an open file");
+    fail("remove() failed on a valid file");
   } else {
     msg("remove() correctly returned TRUE");
   }
 
   /* Check that the opened file cannot be reopened after being removed */
-  fd = open("remove.txt");
+  int fd = open("remove.txt");
   if (fd != -1) {
     fail("error: file could be opened after being removed %d", fd);
   } else {

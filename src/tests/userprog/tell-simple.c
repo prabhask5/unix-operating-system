@@ -5,10 +5,10 @@
 
 void test_main(void) {
   /* Create file */
-  create("test-seek.txt", 0);
+  create("test-tell.txt", 0);
 
-  /* Open the file descriptor */
-  int fd = open("test-seek.txt");
+  /* Open the file and gets file descriptor */
+  int fd = open("test-tell.txt");
   if (fd <= 0) {
     fail("error: open() returned output %d", fd);
   }
