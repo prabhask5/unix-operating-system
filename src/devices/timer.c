@@ -7,6 +7,7 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include <list.h>
 
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -16,6 +17,8 @@
 #if TIMER_FREQ > 1000
 #error TIMER_FREQ <= 1000 recommended
 #endif
+
+static struct list sleeping_threads;
 
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
@@ -35,6 +38,7 @@ static void real_time_delay(int64_t num, int32_t denom);
 void timer_init(void) {
   pit_configure_channel(0, 2, TIMER_FREQ);
   intr_register_ext(0x20, timer_interrupt, "8254 Timer");
+  list_init(&sleeping_threads);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -73,14 +77,27 @@ int64_t timer_ticks(void) {
    should be a value once returned by timer_ticks(). */
 int64_t timer_elapsed(int64_t then) { return timer_ticks() - then; }
 
+bool wake_time_less(const struct list_elem* a, const struct list_elem* b, void* aux UNUSED) {
+  const struct thread* thread_a = list_entry(a, struct thread, elem);
+  const struct thread* thread_b = list_entry(b, struct thread, elem);
+  return thread_a->wake_time < thread_b->wake_time;
+}
+
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void timer_sleep(int64_t ticks) {
-  int64_t start = timer_ticks();
+  // int64_t start = timer_ticks();
 
-  ASSERT(intr_get_level() == INTR_ON);
-  while (timer_elapsed(start) < ticks)
-    thread_yield();
+  // ASSERT(intr_get_level() == INTR_ON);
+  // while (timer_elapsed(start) < ticks)
+  //   thread_yield();
+
+  struct thread* cur_thread = thread_current();
+  cur_thread->wake_time = timer_ticks() + ticks;
+  enum intr_level old_level = intr_disable();
+  list_insert_ordered(&sleeping_threads, &cur_thread->elem, wake_time_less, NULL);
+  thread_block();
+  intr_set_level(old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -129,6 +146,22 @@ void timer_print_stats(void) { printf("Timer: %" PRId64 " ticks\n", timer_ticks(
 static void timer_interrupt(struct intr_frame* args UNUSED) {
   ticks++;
   thread_tick();
+
+  // enum intr_level old_level = intr_disable();
+
+  if (list_empty(&sleeping_threads))
+    return;
+
+  struct list_elem* e = list_begin(&sleeping_threads);
+  struct thread* t = list_entry(e, struct thread, elem);
+
+  if (t->wake_time > timer_ticks()) {
+    list_remove(e);
+    thread_unblock(t);
+    t->wake_time = NULL;
+  }
+
+  // intr_set_level(old_level);
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
