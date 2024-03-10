@@ -19,6 +19,7 @@
 #endif
 
 static struct list sleeping_threads;
+static struct lock sleeping_threads_lock;
 
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
@@ -39,6 +40,7 @@ void timer_init(void) {
   pit_configure_channel(0, 2, TIMER_FREQ);
   intr_register_ext(0x20, timer_interrupt, "8254 Timer");
   list_init(&sleeping_threads);
+  lock_init(&sleeping_threads_lock);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -86,18 +88,16 @@ bool wake_time_less(const struct list_elem* a, const struct list_elem* b, void* 
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void timer_sleep(int64_t ticks) {
-  // int64_t start = timer_ticks();
+  ASSERT(intr_get_level() == INTR_ON);
 
-  // ASSERT(intr_get_level() == INTR_ON);
-  // while (timer_elapsed(start) < ticks)
-  //   thread_yield();
-
-  struct thread* cur_thread = thread_current();
-  cur_thread->wake_time = timer_ticks() + ticks;
-  enum intr_level old_level = intr_disable();
-  list_insert_ordered(&sleeping_threads, &cur_thread->elem, wake_time_less, NULL);
-  thread_block();
-  intr_set_level(old_level);
+  if (ticks > 0) {
+    struct thread* cur_thread = thread_current();
+    cur_thread->wake_time = timer_ticks() + ticks;
+    enum intr_level old_level = intr_disable();
+    list_insert_ordered(&sleeping_threads, &cur_thread->elem, wake_time_less, NULL);
+    thread_block();
+    intr_set_level(old_level);
+  }
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
