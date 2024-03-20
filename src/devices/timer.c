@@ -19,7 +19,6 @@
 #endif
 
 static struct list sleeping_threads;
-static struct lock sleeping_threads_lock;
 
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
@@ -40,7 +39,6 @@ void timer_init(void) {
   pit_configure_channel(0, 2, TIMER_FREQ);
   intr_register_ext(0x20, timer_interrupt, "8254 Timer");
   list_init(&sleeping_threads);
-  lock_init(&sleeping_threads_lock);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -147,21 +145,26 @@ static void timer_interrupt(struct intr_frame* args UNUSED) {
   ticks++;
   thread_tick();
 
-  // enum intr_level old_level = intr_disable();
+  int highest_priority = -1;
 
-  if (list_empty(&sleeping_threads))
-    return;
+  while (!list_empty(&sleeping_threads)) {
+    struct list_elem* e = list_begin(&sleeping_threads);
+    struct thread* t = list_entry(e, struct thread, elem);
 
-  struct list_elem* e = list_begin(&sleeping_threads);
-  struct thread* t = list_entry(e, struct thread, elem);
+    if (t->wake_time > timer_ticks())
+      break;
 
-  if (t->wake_time > timer_ticks()) {
     list_remove(e);
-    thread_unblock(t);
+
     t->wake_time = NULL;
+    if (highest_priority < t->priority)
+      highest_priority = t->priority;
+
+    thread_unblock(t);
   }
 
-  // intr_set_level(old_level);
+  if (highest_priority > thread_current()->priority)
+    intr_yield_on_return();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
