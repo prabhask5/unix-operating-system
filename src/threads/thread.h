@@ -92,6 +92,12 @@ struct thread {
 
   int64_t wake_time;
 
+  int priority_donation;
+  struct semaphore* waiting_for_sema;
+  struct condition* waiting_for_cond;
+  struct lock* waiting_for_lock;
+  struct list held_locks;
+
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
 
@@ -145,6 +151,7 @@ void thread_foreach(thread_action_func*, void*);
 
 int thread_get_priority(void);
 void thread_set_priority(int);
+void set_priority_donation(struct thread*, int);
 
 int thread_get_nice(void);
 void thread_set_nice(int);

@@ -157,13 +157,13 @@ static void timer_interrupt(struct intr_frame* args UNUSED) {
     list_remove(e);
 
     t->wake_time = NULL;
-    if (highest_priority < t->priority)
-      highest_priority = t->priority;
+    if (highest_priority < t->priority + t->priority_donation)
+      highest_priority = t->priority + t->priority_donation;
 
     thread_unblock(t);
   }
 
-  if (highest_priority > thread_current()->priority)
+  if (highest_priority > thread_get_priority())
     intr_yield_on_return();
 }
 
