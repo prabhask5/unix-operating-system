@@ -157,8 +157,8 @@ static void timer_interrupt(struct intr_frame* args UNUSED) {
     list_remove(e);
 
     t->wake_time = NULL;
-    if (highest_priority < t->priority + t->priority_donation)
-      highest_priority = t->priority + t->priority_donation;
+    if (highest_priority < thread_get_other_priority(t))
+      highest_priority = thread_get_other_priority(t);
 
     thread_unblock(t);
   }

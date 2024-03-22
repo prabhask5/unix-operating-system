@@ -221,9 +221,8 @@ tid_t thread_create(const char* name, int priority, thread_func* function, void*
   /* Add to run queue. */
   thread_unblock(t);
 
-  if (t->priority + t->priority_donation > thread_get_priority()) {
+  if (thread_get_other_priority(t) > thread_get_priority())
     thread_yield();
-  }
 
   return tid;
 }
@@ -253,7 +252,7 @@ static void thread_enqueue(struct thread* t) {
   if (active_sched_policy == SCHED_FIFO)
     list_push_back(&fifo_ready_list, &t->elem);
   else if (active_sched_policy == SCHED_PRIO)
-    list_push_back(&ready_list_priority_array[t->priority + t->priority_donation], &t->elem);
+    list_push_back(&ready_list_priority_array[thread_get_other_priority(t)], &t->elem);
   else
     PANIC("Unimplemented scheduling policy value: %d", active_sched_policy);
 }
@@ -374,7 +373,7 @@ void set_priority_donation(struct thread* t, int donation) {
     rehash_waiter(t);
   }
   intr_set_level(old_level);
-  if (t->priority + t->priority_donation > thread_get_priority())
+  if (thread_get_other_priority(t) > thread_get_priority())
     thread_yield();
 }
 
@@ -382,6 +381,8 @@ void set_priority_donation(struct thread* t, int donation) {
 int thread_get_priority(void) {
   return thread_current()->priority + thread_current()->priority_donation;
 }
+
+int thread_get_other_priority(struct thread* t) { return t->priority + t->priority_donation; }
 
 /* Sets the current thread's nice value to NICE. */
 void thread_set_nice(int nice UNUSED) { /* Not yet implemented. */

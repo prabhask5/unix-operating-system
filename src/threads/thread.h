@@ -150,6 +150,7 @@ typedef void thread_action_func(struct thread* t, void* aux);
 void thread_foreach(thread_action_func*, void*);
 
 int thread_get_priority(void);
+int thread_get_other_priority(struct thread*);
 void thread_set_priority(int);
 void set_priority_donation(struct thread*, int);
 

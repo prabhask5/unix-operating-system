@@ -199,10 +199,10 @@ void lock_acquire(struct lock* lock) {
     struct thread* g_thread = curr;
     struct thread* r_thread = lock->holder;
 
-    while (r_thread != NULL && (g_thread->priority + g_thread->priority_donation) >
-                                   (r_thread->priority + r_thread->priority_donation)) {
-      set_priority_donation(r_thread, (g_thread->priority + g_thread->priority_donation) -
-                                          r_thread->priority);
+    while (r_thread != NULL &&
+           thread_get_other_priority(g_thread) > thread_get_other_priority(r_thread)) {
+      int donation = thread_get_other_priority(g_thread) - r_thread->priority;
+      set_priority_donation(r_thread, donation);
       g_thread = r_thread;
       if (r_thread->waiting_for_lock != NULL)
         r_thread = r_thread->waiting_for_lock->holder;
@@ -438,12 +438,12 @@ void cond_broadcast(struct condition* cond, struct lock* lock) {
 /* Put thread on the semaphore wait queue for the correct effective priority of thread. This function must be called with interrupts off. */
 void rehash_waiter(struct thread* t) {
   if (t->waiting_for_sema) {
-    list_push_back(&t->waiting_for_sema->waiters_priority_array[t->priority + t->priority_donation],
+    list_push_back(&t->waiting_for_sema->waiters_priority_array[thread_get_other_priority(t)],
                    &t->elem);
   }
 
   if (t->waiting_for_cond) {
-    list_push_back(&t->waiting_for_cond->waiters_priority_array[t->priority + t->priority_donation],
+    list_push_back(&t->waiting_for_cond->waiters_priority_array[thread_get_other_priority(t)],
                    &t->elem);
   }
 }
