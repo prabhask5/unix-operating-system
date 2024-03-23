@@ -93,8 +93,6 @@ struct thread {
   int64_t wake_time;
 
   int priority_donation;
-  struct semaphore* waiting_for_sema;
-  struct condition* waiting_for_cond;
   struct lock* waiting_for_lock;
   struct list held_locks;
 
