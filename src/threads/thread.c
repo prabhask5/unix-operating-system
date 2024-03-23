@@ -348,7 +348,7 @@ void thread_foreach(thread_action_func* func, void* aux) {
 bool is_curr_highest_priority() {
   for (int p = 63; p >= 0; p--) {
     if (!list_empty(&ready_list_priority_array[p])) {
-      if (p > thread_get_priority()) {
+      if (p >= thread_get_priority()) {
         return false;
       } else {
         return true;
@@ -369,7 +369,8 @@ void thread_set_priority(int new_priority) {
   // keep effective priority the same after base priority is changed
   int effective_priority = thread_get_priority();
   t->priority = new_priority;
-  t->priority_donation = effective_priority - t->priority;
+  if (t->priority_donation > 0)
+    t->priority_donation = effective_priority - t->priority;
 
   intr_set_level(old_level);
   if (!is_curr_highest_priority())
