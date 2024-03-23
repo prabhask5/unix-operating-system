@@ -209,7 +209,7 @@ void lock_acquire(struct lock* lock) {
     while (r_thread != NULL &&
            thread_get_other_priority(g_thread) > thread_get_other_priority(r_thread)) {
       int donation = thread_get_other_priority(g_thread) - r_thread->priority;
-      set_other_priority_donation(r_thread, donation);
+      set_priority_donation(r_thread, donation);
       g_thread = r_thread;
       if (r_thread->waiting_for_lock != NULL)
         r_thread = r_thread->waiting_for_lock->holder;
@@ -274,9 +274,10 @@ void lock_release(struct lock* lock) {
   }
 
   if (new_highest_waiting_priority > thread_current()->priority) {
-    set_priority_donation(new_highest_waiting_priority - thread_current()->priority);
+    set_priority_donation(thread_current(),
+                          new_highest_waiting_priority - thread_current()->priority);
   } else if (thread_current()->priority_donation > 0) {
-    set_priority_donation(0);
+    set_priority_donation(thread_current(), 0);
   }
 
   lock->holder = NULL;

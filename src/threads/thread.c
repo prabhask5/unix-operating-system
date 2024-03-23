@@ -377,26 +377,7 @@ void thread_set_priority(int new_priority) {
     thread_yield();
 }
 
-void set_priority_donation(int donation) {
-
-  enum intr_level old_level;
-  struct thread* t = thread_current();
-
-  old_level = intr_disable();
-  t->priority_donation = donation;
-  if (t->status == THREAD_READY) {
-    list_remove(&t->elem);
-    thread_enqueue(t);
-  } else if (t->status == THREAD_BLOCKED) {
-    list_remove(&t->elem);
-    rehash_waiter(t);
-  }
-  intr_set_level(old_level);
-  if (!is_curr_highest_priority())
-    thread_yield();
-}
-
-void set_other_priority_donation(struct thread* t, int donation) {
+void set_priority_donation(struct thread* t, int donation) {
 
   enum intr_level old_level;
 
@@ -410,7 +391,8 @@ void set_other_priority_donation(struct thread* t, int donation) {
     rehash_waiter(t);
   }
   intr_set_level(old_level);
-  if (thread_get_other_priority(t) > thread_get_priority())
+  if ((t != thread_current() && thread_get_other_priority(t) > thread_get_priority()) ||
+      (t == thread_current() && !is_curr_highest_priority()))
     thread_yield();
 }
 
