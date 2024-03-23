@@ -61,6 +61,7 @@ static void schedule(void);
 static void thread_enqueue(struct thread* t);
 static tid_t allocate_tid(void);
 void thread_switch_tail(struct thread* prev);
+bool is_curr_highest_priority(void);
 
 static void kernel_thread(thread_func*, void* aux);
 static void idle(void* aux UNUSED);
@@ -344,32 +345,68 @@ void thread_foreach(thread_action_func* func, void* aux) {
   }
 }
 
+bool is_curr_highest_priority() {
+  for (int p = 63; p >= 0; p--) {
+    if (!list_empty(&ready_list_priority_array[p])) {
+      if (p > thread_get_priority()) {
+        return false;
+      } else {
+        return true;
+      }
+    }
+  }
+}
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority(int new_priority) {
+
   enum intr_level old_level;
   struct thread* t = thread_current();
 
   old_level = intr_disable();
   t->priority = new_priority;
-  list_remove(&t->elem);
   if (t->status == THREAD_READY) {
+    list_remove(&t->elem);
     thread_enqueue(t);
   } else if (t->status == THREAD_BLOCKED) {
+    list_remove(&t->elem);
     rehash_waiter(t);
   }
   intr_set_level(old_level);
-  thread_yield();
+  if (!is_curr_highest_priority())
+    thread_yield();
 }
 
-void set_priority_donation(struct thread* t, int donation) {
+void set_priority_donation(int donation) {
+
+  enum intr_level old_level;
+  struct thread* t = thread_current();
+
+  old_level = intr_disable();
+  t->priority_donation = donation;
+  if (t->status == THREAD_READY) {
+    list_remove(&t->elem);
+    thread_enqueue(t);
+  } else if (t->status == THREAD_BLOCKED) {
+    list_remove(&t->elem);
+    rehash_waiter(t);
+  }
+  intr_set_level(old_level);
+  if (!is_curr_highest_priority())
+    thread_yield();
+}
+
+void set_other_priority_donation(struct thread* t, int donation) {
+
   enum intr_level old_level;
 
   old_level = intr_disable();
   t->priority_donation = donation;
-  list_remove(&t->elem);
   if (t->status == THREAD_READY) {
+    list_remove(&t->elem);
     thread_enqueue(t);
   } else if (t->status == THREAD_BLOCKED) {
+    list_remove(&t->elem);
     rehash_waiter(t);
   }
   intr_set_level(old_level);

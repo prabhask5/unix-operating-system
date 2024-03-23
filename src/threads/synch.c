@@ -109,18 +109,25 @@ void sema_up(struct semaphore* sema) {
 
   ASSERT(sema != NULL);
 
-  struct thread* awoken_thread = NULL;
-
   old_level = intr_disable();
+
+  sema->value++;
   for (int p = 63; p >= 0; p--) {
     if (!list_empty(&sema->waiters_priority_array[p])) {
-      awoken_thread =
+      struct thread* awoken_thread =
           list_entry(list_pop_front(&sema->waiters_priority_array[p]), struct thread, elem);
       thread_unblock(awoken_thread);
+      if (thread_get_other_priority(awoken_thread) > thread_get_priority()) {
+        if (!intr_context()) {
+          thread_yield();
+        } else {
+          intr_yield_on_return();
+        }
+      }
       break;
     }
   }
-  sema->value++;
+
   intr_set_level(old_level);
 }
 
@@ -202,7 +209,7 @@ void lock_acquire(struct lock* lock) {
     while (r_thread != NULL &&
            thread_get_other_priority(g_thread) > thread_get_other_priority(r_thread)) {
       int donation = thread_get_other_priority(g_thread) - r_thread->priority;
-      set_priority_donation(r_thread, donation);
+      set_other_priority_donation(r_thread, donation);
       g_thread = r_thread;
       if (r_thread->waiting_for_lock != NULL)
         r_thread = r_thread->waiting_for_lock->holder;
@@ -265,9 +272,12 @@ void lock_release(struct lock* lock) {
         new_highest_waiting_priority = p;
     }
   }
-  if (new_highest_waiting_priority > thread_get_priority())
-    set_priority_donation(thread_current(),
-                          new_highest_waiting_priority - thread_current()->priority);
+
+  if (new_highest_waiting_priority > thread_current()->priority) {
+    set_priority_donation(new_highest_waiting_priority - thread_current()->priority);
+  } else if (thread_current()->priority_donation > 0) {
+    set_priority_donation(0);
+  }
 
   lock->holder = NULL;
   sema_up(&lock->semaphore);
