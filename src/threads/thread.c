@@ -366,10 +366,9 @@ void thread_set_priority(int new_priority) {
 
   old_level = intr_disable();
 
-  // keep effective priority the same after base priority is changed
   int effective_priority = thread_get_priority();
   t->priority = new_priority;
-  if (t->priority_donation > 0)
+  if (t->priority_donation > 0 && thread_get_priority() < effective_priority)
     t->priority_donation = effective_priority - t->priority;
 
   intr_set_level(old_level);
