@@ -6,8 +6,8 @@
 
 /* A counting semaphore. */
 struct semaphore {
-  unsigned value;                         /* Current value. */
-  struct list waiters_priority_array[64]; /* List of waiting threads. */
+  unsigned value;                     /* Current value. */
+  struct list waiters_priority_array; /* List of waiting threads. */
 };
 
 void sema_init(struct semaphore*, unsigned value);
@@ -29,9 +29,16 @@ bool lock_try_acquire(struct lock*);
 void lock_release(struct lock*);
 bool lock_held_by_current_thread(const struct lock*);
 
+/* One semaphore in a list. */
+struct semaphore_elem {
+  struct list_elem elem;         /* List element. */
+  struct semaphore semaphore;    /* This semaphore. */
+  struct thread* waiting_thread; /* The only thread that is waiting for this semaphore */
+};
+
 /* Condition variable. */
 struct condition {
-  struct list waiters_priority_array[64]; /* List of waiting threads. */
+  struct list waiters_priority_array; /* List of waiting threads. */
 };
 
 void cond_init(struct condition*);
