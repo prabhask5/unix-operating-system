@@ -376,7 +376,22 @@ void thread_set_priority(int new_priority) {
     thread_yield();
 }
 
-void set_priority_donation(struct thread* t, int donation) { t->priority_donation = donation; }
+void set_priority_donation(struct thread* t, int donation) {
+
+  enum intr_level old_level;
+
+  old_level = intr_disable();
+  t->priority_donation = donation;
+  if (t->status == THREAD_READY) {
+    list_remove(&t->elem);
+    thread_enqueue(t);
+  } else if (t->status == THREAD_BLOCKED &&
+             (t->waiting_for_sema != NULL || t->waiting_for_cond != NULL)) {
+    list_remove(&t->elem);
+    rehash_waiter(t);
+  }
+  intr_set_level(old_level);
+}
 
 /* Returns the current thread's priority. */
 int thread_get_priority(void) {
@@ -511,25 +526,6 @@ static struct thread* thread_schedule_fifo(void) {
 
 /* Strict priority scheduler */
 static struct thread* thread_schedule_prio(void) {
-
-  // rehashing if effective priorities have changed
-  for (int p = 0; p < 64; p++) {
-    for (struct list_elem* e = list_begin(&ready_list_priority_array[p]);
-         e != list_end(&ready_list_priority_array[p]);) {
-      struct list_elem* curr = e;
-      e = list_next(e);
-
-      struct thread* t = list_entry(curr, struct thread, elem);
-      int curr_ef = thread_get_other_priority(t);
-
-      if (curr_ef != p) {
-        list_remove(curr);
-        list_push_back(&ready_list_priority_array[curr_ef], curr);
-      }
-    }
-  }
-
-  // actually finding the thread with the highest priority
   for (int p = 63; p >= 0; p--) {
     if (!list_empty(&ready_list_priority_array[p])) {
       struct thread* next =

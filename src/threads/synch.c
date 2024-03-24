@@ -32,6 +32,8 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+void rehash_waiter(struct thread*);
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -68,7 +70,9 @@ void sema_down(struct semaphore* sema) {
 
   while (sema->value == 0) {
     list_push_back(&sema->waiters_priority_array[thread_get_priority()], &t->elem);
+    t->waiting_for_sema = sema;
     thread_block();
+    t->waiting_for_sema = NULL;
   }
   sema->value--;
   intr_set_level(old_level);
@@ -108,25 +112,6 @@ void sema_up(struct semaphore* sema) {
   old_level = intr_disable();
 
   sema->value++;
-
-  // rehashing if effective priorities have changed
-  for (int p = 0; p < 64; p++) {
-    for (struct list_elem* e = list_begin(&sema->waiters_priority_array[p]);
-         e != list_end(&sema->waiters_priority_array[p]);) {
-      struct list_elem* curr = e;
-      e = list_next(e);
-
-      struct thread* t = list_entry(curr, struct thread, elem);
-      int curr_ef = thread_get_other_priority(t);
-
-      if (curr_ef != p) {
-        list_remove(curr);
-        list_push_back(&sema->waiters_priority_array[curr_ef], curr);
-      }
-    }
-  }
-
-  // actually finding the thread with the highest priority
   for (int p = 63; p >= 0; p--) {
     if (!list_empty(&sema->waiters_priority_array[p])) {
       struct thread* awoken_thread =
@@ -226,7 +211,6 @@ void lock_acquire(struct lock* lock) {
       int donation = thread_get_other_priority(g_thread) - r_thread->priority;
       set_priority_donation(r_thread, donation);
       g_thread = r_thread;
-
       if (r_thread->waiting_for_lock != NULL)
         r_thread = r_thread->waiting_for_lock->holder;
       else
@@ -417,6 +401,7 @@ void cond_wait(struct condition* cond, struct lock* lock) {
   sema_init(&waiter.semaphore, 0);
   list_push_back(&cond->waiters_priority_array[thread_get_priority()], &waiter.elem);
   lock_release(lock);
+  thread_current()->waiting_for_cond = cond;
   sema_down(&waiter.semaphore);
   lock_acquire(lock);
 }
@@ -434,27 +419,9 @@ void cond_signal(struct condition* cond, struct lock* lock UNUSED) {
   ASSERT(!intr_context());
   ASSERT(lock_held_by_current_thread(lock));
 
-  // rehashing if effective priorities have changed
-  for (int p = 0; p < 64; p++) {
-    for (struct list_elem* e = list_begin(&cond->waiters_priority_array[p]);
-         e != list_end(&cond->waiters_priority_array[p]);) {
-      struct list_elem* curr = e;
-      e = list_next(e);
-
-      struct semaphore_elem* s = list_entry(curr, struct semaphore_elem, elem);
-      int curr_ef = thread_get_other_priority(
-          list_entry(list_begin(&s->semaphore.waiters_priority_array[p]), struct thread, elem));
-
-      if (curr_ef != p) {
-        list_remove(curr);
-        list_push_back(&cond->waiters_priority_array[curr_ef], curr);
-      }
-    }
-  }
-
-  // actually finding the thread with the highest priority
   for (int p = 63; p >= 0; p--) {
     if (!list_empty(&cond->waiters_priority_array[p])) {
+      thread_current()->waiting_for_cond = NULL;
       sema_up(
           &list_entry(list_pop_front(&cond->waiters_priority_array[p]), struct semaphore_elem, elem)
                ->semaphore);
@@ -476,5 +443,18 @@ void cond_broadcast(struct condition* cond, struct lock* lock) {
   for (int p = 63; p >= 0; p--) {
     while (!list_empty(&cond->waiters_priority_array[p]))
       cond_signal(cond, lock);
+  }
+}
+
+/* Put thread on the semaphore wait queue for the correct effective priority of thread. This function must be called with interrupts off. */
+void rehash_waiter(struct thread* t) {
+  if (t->waiting_for_sema) {
+    list_push_back(&t->waiting_for_sema->waiters_priority_array[thread_get_other_priority(t)],
+                   &t->elem);
+  }
+
+  if (t->waiting_for_cond) {
+    list_push_back(&t->waiting_for_cond->waiters_priority_array[thread_get_other_priority(t)],
+                   &t->elem);
   }
 }
