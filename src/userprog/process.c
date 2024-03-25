@@ -173,6 +173,7 @@ static void start_process(void** args) {
 
   /* Allocate process control block */
   struct process* new_pcb = malloc(sizeof(struct process));
+  struct thread_list_elem* tle = malloc(sizeof(struct thread_list_elem));
   success = pcb_success = new_pcb != NULL;
 
   /* Initialize process control block */
@@ -194,6 +195,13 @@ static void start_process(void** args) {
     success = success && create_file_descriptor("stderr", &(t->pcb->fdt)) != NULL;
 
     list_init(&(t->pcb->children_exit_code_data));
+    list_init(&(t->pcb->thread_list));
+
+    // Push the current thread on to the pcb
+    tle->thread = t;
+    tle->exit_status = child_pid_data;
+    list_push_back(&(t->pcb->thread_list), &(tle->elem));
+
     struct shared_data* exit_code_data = initialize_shared_data(t->tid);
     struct shared_data* child_pid_data = initialize_shared_data(t->tid);
 
@@ -234,6 +242,7 @@ static void start_process(void** args) {
     if (pcb_to_free->child_pid_data != NULL)
       free(pcb_to_free->child_pid_data);
     free(pcb_to_free);
+    free(tle);
   }
 
   /* Clean up. Exit on failure or jump to userspace */
@@ -435,7 +444,7 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
   int i;
 
   /* Allocate and activate page directory. */
-  t->pcb->pagedir = pagedir_create();
+  t->pcb->pagedir = pagedir_create(); // This returns a pointer to NULL?
   if (t->pcb->pagedir == NULL)
     goto done;
   process_activate();
@@ -722,7 +731,38 @@ pid_t get_pid(struct process* p) { return (pid_t)p->main_thread->tid; }
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. You may find it necessary to change the
    function signature. */
-bool setup_thread(void (**eip)(void) UNUSED, void** esp UNUSED) { return false; }
+bool setup_thread(void (**eip)(void) UNUSED, void** esp UNUSED) {
+  // 1. Allocates a new page in user memory for the stack
+  void* kpage = palloc_get_page(PAL_USER | PAL_ZERO);
+  if (kpage == NULL)
+    return false;
+  // 2. Install the page at ((uint8_t*)PHYS_BASE) - PGSIZE * NUM_THREADS * PAGES_PER_THREAD
+  //     1. Each thread initially gets one page of memory (hack, can change depending on if this works?)
+  //     2. NUM_THREADS can be determined dynamically based on the length of the thread list in the PCB minus 1
+  int PAGES_PER_THREAD = 5; // TODO define this somewhere else
+  int i = 1;
+  bool page_allocated = false;
+  void* upage;
+  while (!page_allocated) {
+    // upage defines the ___ of the page
+    upage = (void*)PHYS_BASE - i * PAGES_PER_THREAD * PGSIZE;
+    // Check if the page is already allocated
+    if (!pagedir_get_page(thread_current()->pcb->pagedir, upage)) {
+      // If the page is not already allocated, install the page for the new stack here
+      if (!pagedir_set_page(thread_current()->pcb->pagedir, upage, kpage, true)) {
+        palloc_free_page(kpage);
+        return false;
+      }
+      page_allocated = true;
+    }
+    ++i;
+  }
+  // 3. Set esp to the top of the newly allocated userpage page
+  *esp = upage + PGSIZE - 1; // add page size so we are at the top of the page
+  // 5. Idk what to do with EIP
+  // 6. returns true if success else false
+  return true;
+}
 
 /* Starts a new thread with a new user stack running SF, which takes
    TF and ARG as arguments on its user stack. This new thread may be
@@ -733,7 +773,25 @@ bool setup_thread(void (**eip)(void) UNUSED, void** esp UNUSED) { return false; 
    This function will be implemented in Project 2: Multithreading and
    should be similar to process_execute (). For now, it does nothing.
    */
-tid_t pthread_execute(stub_fun sf UNUSED, pthread_fun tf UNUSED, void* arg UNUSED) { return -1; }
+tid_t pthread_execute(stub_fun sf UNUSED, pthread_fun tf UNUSED, void* arg UNUSED) {
+  // initialize thread_tid shared_data struct
+  struct shared_data* thread_shared_data = initialize_shared_data(thread_current()->tid);
+  // Call thread_create(file_name, PRI_DEFAULT, start_pthread, start_pthread_args) to get a new thread ID
+  void* start_pthread_args[5];
+  start_pthread_args[0] = sf;
+  start_pthread_args[1] = tf;
+  start_pthread_args[2] = arg;
+  start_pthread_args[3] = thread_shared_data;
+  start_pthread_args[4] = thread_current()->pcb;
+  // Create a new kernel thread which will call start_pthread
+  tid_t tid = thread_create("pthread", PRI_DEFAULT, start_pthread, start_pthread_args);
+  // Wait on thread_tid to verify the thread start successfully
+  if (wait_for_data(thread_shared_data)) {
+    return tid;
+  }
+  return TID_ERROR;
+  // Returns TID or TID_ERROR
+}
 
 /* A thread function that creates a new user thread and starts it
    running. Responsible for adding itself to the list of threads in
@@ -741,7 +799,83 @@ tid_t pthread_execute(stub_fun sf UNUSED, pthread_fun tf UNUSED, void* arg UNUSE
 
    This function will be implemented in Project 2: Multithreading and
    should be similar to start_process (). For now, it does nothing. */
-static void start_pthread(void* exec_ UNUSED) {}
+static void start_pthread(void* exec_ UNUSED) {
+
+  // Need to init the user pagedir
+  // thread_current()->pcb->main_thread is garabge
+  // thread_current()->pcb->pagedir = pagedir_create(); // probably shouldn't do this. This segfaults
+  // process_activate();
+  // still no pagedir?
+
+  // 1. Takes in the parent pcb, function to execute, and its arguments
+  // TODO clean this up
+  stub_fun* sf = *(stub_fun**)(exec_ + 0);
+  thread_func* tf = *(thread_func**)(exec_ + 4);
+  void* arg = *(void**)(exec_ + 8);
+  struct shared_data* thread_shared_data = *(struct shared_data**)(exec_ + 12);
+  struct process* parent_pcb = *(struct process**)(exec_ + 16);
+
+  struct thread* t = thread_current();
+  t->pcb = parent_pcb;
+
+  // 5. Allocates new thread_list_elem
+  struct thread_list_elem* new_thread_elem = malloc(sizeof(struct thread_list_elem));
+  if (new_thread_elem == NULL) {
+    save_data(thread_shared_data, 0);
+    free(new_thread_elem);
+    return;
+  }
+  new_thread_elem->thread = t;
+  new_thread_elem->exit_status = initialize_shared_data(thread_current()->tid);
+
+  // 6. Adds the new thread to the list of threads in the PCB
+  // TODO figure out why this segfaults
+  // list_push_back(&thread_current()->pcb->thread_list, &new_thread->elem);
+
+  // Calls setup_thread to allocated user memory on for the stack
+  struct intr_frame if_;
+  if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
+  if_.cs = SEL_UCSEG;
+  if_.eflags = FLAG_IF | FLAG_MBS;
+  if (!setup_thread(&if_.eip, &if_.esp)) {
+    save_data(thread_shared_data, 0);
+    free(new_thread_elem);
+    return;
+  }
+
+  // 8. Sets esp to the address of the return address
+  // 3. Places function args onto the top of the allocated stack
+  // ADD ARGUMENTS TO STACK
+  // See https://cs162.org/static/proj/pintos-docs/docs/userprog/program-startup/
+  // TODO get this working
+
+  // Push the function pointer to the stack
+  void* paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
+  if_.esp = if_.esp - sizeof(tf);
+  paddr -= sizeof(tf);
+  memcpy(paddr, &tf, sizeof(tf));
+
+  // Push the arg to the stack
+  if_.esp = if_.esp - sizeof(arg);
+  paddr -= sizeof(arg);
+  memcpy(paddr, &arg, sizeof(arg));
+
+  // 4. Set the return address to NULL
+  // Push the dummy (null) return address to the stack
+  if_.esp = if_.esp - sizeof(NULL);
+  paddr -= sizeof(NULL);
+  memset(paddr, 0, sizeof(NULL));
+
+  // 9. Sets eip to the start of the function
+  if_.eip = (void (*)(pthread_fun, void*))sf;
+
+  // Set shared data value to 1 if successful, 0 if not
+  save_data(thread_shared_data, 1);
+
+  // 10. Simulates return from interrupt similar to in start_process
+  asm volatile("movl %0, %%esp; jmp intr_exit" : : "g"(&if_) : "memory");
+  NOT_REACHED();
+}
 
 /* Waits for thread with TID to die, if that thread was spawned
    in the same process and has not been waited on yet. Returns TID on

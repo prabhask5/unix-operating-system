@@ -24,7 +24,7 @@ intr_entry:
 	pushl %gs
 	pushal
 
-   /* TODO Save FPU registers */
+   /* Save FPU registers */
    subl $108, %esp
 	fsave (%esp)
 	fninit
@@ -55,7 +55,7 @@ intr_entry:
 .func intr_exit
 intr_exit:
 
-   /* TODO Restore FPU registers */
+   /* Restore FPU registers */
    frstor (%esp)
    addl $108, %esp
 

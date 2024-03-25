@@ -43,6 +43,13 @@ struct shared_data {
   struct list_elem elem;
 };
 
+// Add shared data for tracking process exit status for exec, wait, and exit
+struct thread_list_elem {
+  struct thread* thread;
+  struct shared_data* exit_status;
+  struct list_elem elem;
+};
+
 /* The process control block for a given process. Since
    there can be multiple threads per process, we need a separate
    PCB from the TCB. All TCBs in a process will have a pointer
@@ -58,6 +65,7 @@ struct process {
   struct shared_data*
       exit_code_data; /* Contains current processes exit information (shared with parent pcb in children_exit_code_data) */
   struct list children_exit_code_data; /* List of process_exit_code_t */
+  struct list thread_list;             /* List of active threads in the process*/
 };
 
 void userprog_init(void);
