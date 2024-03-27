@@ -22,6 +22,7 @@
 
 static void start_process(void** args);
 static void start_pthread(void** args);
+static void start_pthread(void** args);
 static bool load(const char* file_name, void (**eip)(void), void** esp);
 bool setup_thread(void (**eip)(void), void** esp);
 void fdt_destroy(struct list* fdt);
@@ -825,6 +826,7 @@ bool setup_thread(void (**eip)(void) UNUSED, void** esp) {
    should be similar to process_execute (). For now, it does nothing.
    */
 tid_t pthread_execute(stub_fun sf, pthread_fun tf, void* arg) {
+tid_t pthread_execute(stub_fun sf, pthread_fun tf, void* arg) {
   // initialize thread_tid shared_data struct
   struct shared_data* thread_shared_data = initialize_shared_data(thread_current()->tid);
   // Call thread_create(file_name, PRI_DEFAULT, start_pthread, start_pthread_args) to get a new thread ID
@@ -918,6 +920,7 @@ static void start_pthread(void** args) {
   memset(if_.esp, 0, sizeof(NULL));
 
   // 9. Sets eip to the start of the function
+  if_.eip = sf;
   if_.eip = sf;
 
   // Set shared data value to 1 if successful, 0 if not
