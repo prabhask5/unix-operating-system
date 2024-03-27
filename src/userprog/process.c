@@ -21,7 +21,7 @@
 #include "threads/vaddr.h"
 
 static void start_process(void** args);
-static thread_func start_pthread;
+static void start_pthread(void** args);
 static bool load(const char* file_name, void (**eip)(void), void** esp);
 bool setup_thread(void (**eip)(void), void** esp);
 void fdt_destroy(struct list* fdt);
@@ -731,7 +731,7 @@ pid_t get_pid(struct process* p) { return (pid_t)p->main_thread->tid; }
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. You may find it necessary to change the
    function signature. */
-bool setup_thread(void (**eip)(void) UNUSED, void** esp UNUSED) {
+bool setup_thread(void (**eip)(void) UNUSED, void** esp) {
   // 1. Allocates a new page in user memory for the stack
   void* kpage = palloc_get_page(PAL_USER | PAL_ZERO);
   if (kpage == NULL)
@@ -773,7 +773,7 @@ bool setup_thread(void (**eip)(void) UNUSED, void** esp UNUSED) {
    This function will be implemented in Project 2: Multithreading and
    should be similar to process_execute (). For now, it does nothing.
    */
-tid_t pthread_execute(stub_fun sf UNUSED, pthread_fun tf UNUSED, void* arg UNUSED) {
+tid_t pthread_execute(stub_fun sf, pthread_fun tf, void* arg) {
   // initialize thread_tid shared_data struct
   struct shared_data* thread_shared_data = initialize_shared_data(thread_current()->tid);
   // Call thread_create(file_name, PRI_DEFAULT, start_pthread, start_pthread_args) to get a new thread ID
@@ -799,7 +799,7 @@ tid_t pthread_execute(stub_fun sf UNUSED, pthread_fun tf UNUSED, void* arg UNUSE
 
    This function will be implemented in Project 2: Multithreading and
    should be similar to start_process (). For now, it does nothing. */
-static void start_pthread(void* exec_ UNUSED) {
+static void start_pthread(void** args) {
 
   // Need to init the user pagedir
   // thread_current()->pcb->main_thread is garabge
@@ -809,11 +809,11 @@ static void start_pthread(void* exec_ UNUSED) {
 
   // 1. Takes in the parent pcb, function to execute, and its arguments
   // TODO clean this up
-  stub_fun* sf = *(stub_fun**)(exec_ + 0);
-  thread_func* tf = *(thread_func**)(exec_ + 4);
-  void* arg = *(void**)(exec_ + 8);
-  struct shared_data* thread_shared_data = *(struct shared_data**)(exec_ + 12);
-  struct process* parent_pcb = *(struct process**)(exec_ + 16);
+  stub_fun sf = args[0];
+  pthread_fun tf = args[1];
+  void* arg = args[2];
+  struct shared_data* thread_shared_data = args[3];
+  struct process* parent_pcb = args[4];
 
   struct thread* t = thread_current();
   t->pcb = parent_pcb;
@@ -830,7 +830,7 @@ static void start_pthread(void* exec_ UNUSED) {
 
   // 6. Adds the new thread to the list of threads in the PCB
   // TODO figure out why this segfaults
-  // list_push_back(&thread_current()->pcb->thread_list, &new_thread->elem);
+  list_push_back(&thread_current()->pcb->thread_list, &new_thread_elem->elem);
 
   // Calls setup_thread to allocated user memory on for the stack
   struct intr_frame if_;
@@ -850,24 +850,33 @@ static void start_pthread(void* exec_ UNUSED) {
   // TODO get this working
 
   // Push the function pointer to the stack
-  void* paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
-  if_.esp = if_.esp - sizeof(tf);
-  paddr -= sizeof(tf);
-  memcpy(paddr, &tf, sizeof(tf));
+  // void* paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
+  // TODO figure out if we are supposed to use virtual addresses or physical addresses for memcpy
 
   // Push the arg to the stack
-  if_.esp = if_.esp - sizeof(arg);
-  paddr -= sizeof(arg);
-  memcpy(paddr, &arg, sizeof(arg));
+  if_.esp -= sizeof(void*);
+  // void* paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
+  ASSERT(pagedir_get_page(thread_current()->pcb->pagedir, if_.esp) != NULL);
+
+  memcpy(if_.esp, &arg, sizeof(void*));
+
+  if_.esp -= sizeof(void*);
+  // paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
+  ASSERT(pagedir_get_page(thread_current()->pcb->pagedir, if_.esp) != NULL);
+
+  memcpy(if_.esp, &tf, sizeof(void*));
 
   // 4. Set the return address to NULL
   // Push the dummy (null) return address to the stack
-  if_.esp = if_.esp - sizeof(NULL);
-  paddr -= sizeof(NULL);
-  memset(paddr, 0, sizeof(NULL));
+  if_.esp -= sizeof(void*);
+  // paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
+  ASSERT(pagedir_get_page(thread_current()->pcb->pagedir, if_.esp) != NULL);
+
+  // memset(if_.esp, 0, sizeof(NULL));
+  *(void**)if_.esp = NULL;
 
   // 9. Sets eip to the start of the function
-  if_.eip = (void (*)(pthread_fun, void*))sf;
+  if_.eip = sf;
 
   // Set shared data value to 1 if successful, 0 if not
   save_data(thread_shared_data, 1);
