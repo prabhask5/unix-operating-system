@@ -908,10 +908,20 @@ static void start_pthread(void** args) {
 
   // Push the arg to the stack
   if_.esp -= sizeof(void*);
+<<<<<<< HEAD
+=======
+  // void* paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
+
+>>>>>>> 670fd33 (still havn't fixed the bug)
   memcpy(if_.esp, &arg, sizeof(void*));
 
   // Push the function pointer to the stack
   if_.esp -= sizeof(void*);
+<<<<<<< HEAD
+=======
+  // paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
+
+>>>>>>> 670fd33 (still havn't fixed the bug)
   memcpy(if_.esp, &tf, sizeof(void*));
 
   // 4. Set the return address to NULL
