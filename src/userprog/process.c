@@ -856,13 +856,11 @@ static void start_pthread(void** args) {
   // Push the arg to the stack
   if_.esp -= sizeof(void*);
   // void* paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
-  ASSERT(pagedir_get_page(thread_current()->pcb->pagedir, if_.esp) != NULL);
 
   memcpy(if_.esp, &arg, sizeof(void*));
 
   if_.esp -= sizeof(void*);
   // paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
-  ASSERT(pagedir_get_page(thread_current()->pcb->pagedir, if_.esp) != NULL);
 
   memcpy(if_.esp, &tf, sizeof(void*));
 
