@@ -868,7 +868,6 @@ static void start_pthread(void** args) {
   // Push the dummy (null) return address to the stack
   if_.esp -= sizeof(void*);
   // paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
-  ASSERT(pagedir_get_page(thread_current()->pcb->pagedir, if_.esp) != NULL);
 
   // memset(if_.esp, 0, sizeof(NULL));
   *(void**)if_.esp = NULL;
