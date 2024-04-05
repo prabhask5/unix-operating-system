@@ -951,11 +951,9 @@ void pthread_exit(void) {
     if (t->tid == cur->tid) {
       // TODO Must drop locks to prevent a deadlock
       save_data(thread_elem->exit_status, 0);
+      break;
     }
   }
-
-  // Remove the thread from the list of threads in the PCB
-  list_remove(&cur->elem);
 
   // Exit the thread
   lock_release(&thread_current()->pcb->kernel_lock);
