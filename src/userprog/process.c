@@ -784,6 +784,8 @@ pid_t get_pid(struct process* p) { return (pid_t)p->main_thread->tid; }
 bool setup_thread(void (**eip)(void) UNUSED, void** esp) {
   struct thread* t = thread_current();
 
+  struct thread* t = thread_current();
+
   // 1. Allocates a new page in user memory for the stack
   void* kpage = palloc_get_page(PAL_USER | PAL_ZERO);
   if (kpage == NULL)
@@ -804,6 +806,7 @@ bool setup_thread(void (**eip)(void) UNUSED, void** esp) {
         palloc_free_page(kpage);
         return false;
       }
+      t->upage = upage;
       t->upage = upage;
       page_allocated = true;
     }
