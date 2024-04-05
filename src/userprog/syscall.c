@@ -476,10 +476,16 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
   else if (args[0] == SYS_PT_CREATE) {
     // TODO validate args (sfun, tfun, arg)
     // call pthread_execute
-    pthread_execute((stub_fun)args[1], (pthread_fun)args[2], (void*)args[3]);
+    f->eax = pthread_execute((stub_fun)args[1], (pthread_fun)args[2], (void*)args[3]);
   } else if (args[0] == SYS_PT_EXIT) {
-    // TODO
+    pthread_exit();
+
   } else if (args[0] == SYS_PT_JOIN) {
-    // TODO
+    // TODO validate args ()
+    // call pthread_join
+    pthread_join((tid_t)args[1]);
+  } else if (args[0] == SYS_GET_TID) {
+    // Return thread_tid()
+    f->eax = thread_tid();
   }
 }

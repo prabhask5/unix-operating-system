@@ -98,6 +98,8 @@ struct thread {
   struct lock* waiting_for_lock;
   struct list held_locks;
 
+  void* upage;
+
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
 

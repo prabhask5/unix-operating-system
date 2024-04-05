@@ -197,6 +197,9 @@ static void start_process(void** args) {
     list_init(&(t->pcb->children_exit_code_data));
     list_init(&(t->pcb->thread_list));
 
+    // Init the lock
+    lock_init(&(t->pcb->kernel_lock));
+
     // Push the current thread on to the pcb
     tle->thread = t;
     tle->exit_status = child_pid_data;
@@ -732,6 +735,8 @@ pid_t get_pid(struct process* p) { return (pid_t)p->main_thread->tid; }
    now, it does nothing. You may find it necessary to change the
    function signature. */
 bool setup_thread(void (**eip)(void) UNUSED, void** esp) {
+  struct thread* t = thread_current();
+
   // 1. Allocates a new page in user memory for the stack
   void* kpage = palloc_get_page(PAL_USER | PAL_ZERO);
   if (kpage == NULL)
@@ -739,20 +744,21 @@ bool setup_thread(void (**eip)(void) UNUSED, void** esp) {
   // 2. Install the page at ((uint8_t*)PHYS_BASE) - PGSIZE * NUM_THREADS * PAGES_PER_THREAD
   //     1. Each thread initially gets one page of memory (hack, can change depending on if this works?)
   //     2. NUM_THREADS can be determined dynamically based on the length of the thread list in the PCB minus 1
-  int PAGES_PER_THREAD = 5; // TODO define this somewhere else
+  int PAGES_PER_THREAD = 1; // TODO define this somewhere else
   int i = 1;
   bool page_allocated = false;
   void* upage;
   while (!page_allocated) {
     // upage defines the ___ of the page
     upage = (void*)PHYS_BASE - i * PAGES_PER_THREAD * PGSIZE;
-    // Check if the page is already allocated
+    // Check if the page is already allocated (pagedir_get_page returns NULL if not allocated)
     if (!pagedir_get_page(thread_current()->pcb->pagedir, upage)) {
       // If the page is not already allocated, install the page for the new stack here
       if (!pagedir_set_page(thread_current()->pcb->pagedir, upage, kpage, true)) {
         palloc_free_page(kpage);
         return false;
       }
+      t->upage = upage;
       page_allocated = true;
     }
     ++i;
@@ -800,12 +806,7 @@ tid_t pthread_execute(stub_fun sf, pthread_fun tf, void* arg) {
    This function will be implemented in Project 2: Multithreading and
    should be similar to start_process (). For now, it does nothing. */
 static void start_pthread(void** args) {
-
-  // Need to init the user pagedir
-  // thread_current()->pcb->main_thread is garabge
-  // thread_current()->pcb->pagedir = pagedir_create(); // probably shouldn't do this. This segfaults
-  // process_activate();
-  // still no pagedir?
+  // lock_acquire(&thread_current()->pcb->kernel_lock);
 
   // 1. Takes in the parent pcb, function to execute, and its arguments
   // TODO clean this up
@@ -817,6 +818,7 @@ static void start_pthread(void** args) {
 
   struct thread* t = thread_current();
   t->pcb = parent_pcb;
+  process_activate();
 
   // 5. Allocates new thread_list_elem
   struct thread_list_elem* new_thread_elem = malloc(sizeof(struct thread_list_elem));
@@ -840,6 +842,7 @@ static void start_pthread(void** args) {
   if (!setup_thread(&if_.eip, &if_.esp)) {
     save_data(thread_shared_data, 0);
     free(new_thread_elem);
+    // lock_release(&thread_current()->pcb->kernel_lock);
     return;
   }
 
@@ -856,12 +859,11 @@ static void start_pthread(void** args) {
   // Push the arg to the stack
   if_.esp -= sizeof(void*);
   // void* paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
-
   memcpy(if_.esp, &arg, sizeof(void*));
 
   if_.esp -= sizeof(void*);
+  // paddr -= sizeof(void*);
   // paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
-
   memcpy(if_.esp, &tf, sizeof(void*));
 
   // 4. Set the return address to NULL
@@ -870,7 +872,7 @@ static void start_pthread(void** args) {
   // paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
 
   // memset(if_.esp, 0, sizeof(NULL));
-  *(void**)if_.esp = NULL;
+  // *(void**)if_.esp = NULL;
 
   // 9. Sets eip to the start of the function
   if_.eip = sf;
@@ -879,6 +881,7 @@ static void start_pthread(void** args) {
   save_data(thread_shared_data, 1);
 
   // 10. Simulates return from interrupt similar to in start_process
+  // lock_release(&thread_current()->pcb->kernel_lock);
   asm volatile("movl %0, %%esp; jmp intr_exit" : : "g"(&if_) : "memory");
   NOT_REACHED();
 }
@@ -890,7 +893,33 @@ static void start_pthread(void** args) {
 
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. */
-tid_t pthread_join(tid_t tid UNUSED) { return -1; }
+tid_t pthread_join(tid_t tid UNUSED) {
+  // printf("Joining");
+  lock_acquire(&thread_current()->pcb->kernel_lock);
+  // Verify it is not being called on itself
+  if (tid == thread_current()->tid) {
+    return TID_ERROR;
+  }
+  //  TODO If a thread joins on main, it should be woken up and allowed to run after main calls pthread_exit but before the process is killed (see above).
+  struct list_elem* e;
+  for (e = list_begin(&thread_current()->pcb->thread_list);
+       e != list_end(&thread_current()->pcb->thread_list); e = list_next(e)) {
+    struct thread_list_elem* thread_elem = list_entry(e, struct thread_list_elem, elem);
+    struct thread* t = thread_elem->thread;
+    if (t->tid == tid) {
+      // TODO Must drop locks to prevent a deadlock
+      lock_release(&thread_current()->pcb->kernel_lock);
+      wait_for_data(thread_elem->exit_status);
+      lock_acquire(&thread_current()->pcb->kernel_lock);
+      // acquire locks again
+      list_remove(e);
+      lock_release(&thread_current()->pcb->kernel_lock);
+      return tid;
+    }
+  }
+  lock_release(&thread_current()->pcb->kernel_lock);
+  return TID_ERROR;
+}
 
 /* Free the current thread's resources. Most resources will
    be freed on thread_exit(), so all we have to do is deallocate the
@@ -901,7 +930,37 @@ tid_t pthread_join(tid_t tid UNUSED) { return -1; }
 
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. */
-void pthread_exit(void) {}
+
+void pthread_exit(void) {
+  lock_acquire(&thread_current()->pcb->kernel_lock);
+  struct thread* cur = thread_current();
+
+  // Free the thread's userspace stack
+  void* upage = cur->upage;
+  if (upage != NULL) {
+    uint32_t* pd = cur->pcb->pagedir;
+    pagedir_clear_page(pd, upage);
+  }
+
+  // Populate exit status
+  struct list_elem* e;
+  for (e = list_begin(&thread_current()->pcb->thread_list);
+       e != list_end(&thread_current()->pcb->thread_list); e = list_next(e)) {
+    struct thread_list_elem* thread_elem = list_entry(e, struct thread_list_elem, elem);
+    struct thread* t = thread_elem->thread;
+    if (t->tid == cur->tid) {
+      // TODO Must drop locks to prevent a deadlock
+      save_data(cur->pcb->exit_code_data, 0);
+    }
+  }
+
+  // Remove the thread from the list of threads in the PCB
+  list_remove(&cur->elem);
+
+  // Exit the thread
+  lock_release(&thread_current()->pcb->kernel_lock);
+  thread_exit();
+}
 
 /* Only to be used when the main thread explicitly calls pthread_exit.
    The main thread should wait on all threads in the process to

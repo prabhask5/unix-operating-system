@@ -66,6 +66,8 @@ struct process {
       exit_code_data; /* Contains current processes exit information (shared with parent pcb in children_exit_code_data) */
   struct list children_exit_code_data; /* List of process_exit_code_t */
   struct list thread_list;             /* List of active threads in the process*/
+  // gradescope said we needed this
+  struct lock kernel_lock; /* Lock for the process */
 };
 
 void userprog_init(void);
