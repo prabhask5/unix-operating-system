@@ -950,7 +950,7 @@ void pthread_exit(void) {
     struct thread* t = thread_elem->thread;
     if (t->tid == cur->tid) {
       // TODO Must drop locks to prevent a deadlock
-      save_data(cur->pcb->exit_code_data, 0);
+      save_data(thread_elem->exit_status, 0);
     }
   }
 
