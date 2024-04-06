@@ -337,7 +337,8 @@ void intr_handler(struct intr_frame* frame) {
 
   // If the interrupt is from user space then we should check to see if the program
   // should exit
-  if (is_trap_from_userspace(frame)) {
+  // Can't be external interrupt since SYS_PT_EXIT cannot run within an external interupt context
+  if (is_trap_from_userspace(frame) && !external) {
     struct thread* t = thread_current();
     if (t->pcb->is_exiting) {
       frame->vec_no = 0x30;
