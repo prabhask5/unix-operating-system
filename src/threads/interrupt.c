@@ -11,6 +11,7 @@
 #include "devices/timer.h"
 #ifdef USERPROG
 #include "userprog/gdt.h"
+#include "userprog/process.h"
 #endif
 
 /* Programmable Interrupt Controller (PIC) registers.
@@ -335,16 +336,12 @@ void intr_handler(struct intr_frame* frame) {
 
   // If the interrupt is from user space then we should check to see if the program
   // should exit
-  // is_trap_from_userspace
-  // print if is exiting
-  // if(*thread_current() != NULL && *thread_current()->pcb->is_exiting){
-  //     printf("is exiting: %d\n", *thread_current()->pcb);
-  // }
   if (is_trap_from_userspace(frame)) {
-    // if (thread_current()->pcb->is_exiting) {
-    //   pthread_exit(NULL);
+    struct thread* t = thread_current();
+    if (t->pcb->is_exiting) {
+      pthread_exit();
+    }
   }
-  // }
 
   /* Invoke the interrupt's handler. */
   handler = intr_handlers[frame->vec_no];
