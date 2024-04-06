@@ -488,11 +488,16 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       pthread_exit();
     }
   } else if (args[0] == SYS_PT_JOIN) {
+<<<<<<< HEAD
     if (!syscall_validate_word(args + 1)) {
       process_exit(-1);
       return;
     }
 
+=======
+    // TODO validate args ()
+    // call pthread_join
+>>>>>>> 31f700d (add return value for join)
     f->eax = pthread_join((tid_t)args[1]);
   } else if (args[0] == SYS_GET_TID) {
     f->eax = thread_tid();
