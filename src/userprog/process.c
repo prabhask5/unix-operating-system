@@ -799,6 +799,7 @@ bool setup_thread(void (**eip)(void) UNUSED, void** esp) {
   while (!page_allocated) {
     // upage defines the ___ of the page
     upage = (void*)PHYS_BASE - i * PGSIZE;
+    upage = (void*)PHYS_BASE - i * PGSIZE;
     // Check if the page is already allocated (pagedir_get_page returns NULL if not allocated)
     if (!pagedir_get_page(thread_current()->pcb->pagedir, upage)) {
       // If the page is not already allocated, install the page for the new stack here
@@ -871,6 +872,8 @@ static void start_pthread(void** args) {
 
   lock_acquire(&thread_current()->pcb->kernel_lock);
 
+  lock_acquire(&thread_current()->pcb->kernel_lock);
+
   // 5. Allocates new thread_list_elem
   struct thread_list_elem* new_thread_elem = malloc(sizeof(struct thread_list_elem));
   bool success = new_thread_elem != NULL;
@@ -919,6 +922,7 @@ static void start_pthread(void** args) {
   memcpy(if_.esp, &arg, sizeof(void*));
 
   // Push the function pointer to the stack
+  // Push the function pointer to the stack
   if_.esp -= sizeof(void*);
 <<<<<<< HEAD
 =======
@@ -931,6 +935,7 @@ static void start_pthread(void** args) {
   // Push the dummy (null) return address to the stack
   if_.esp -= sizeof(void*);
   memset(if_.esp, 0, sizeof(NULL));
+  memset(if_.esp, 0, sizeof(NULL));
 
   // 9. Sets eip to the start of the function
   if_.eip = sf;
@@ -940,6 +945,7 @@ static void start_pthread(void** args) {
   save_data(thread_shared_data, 1);
 
   // 10. Simulates return from interrupt similar to in start_process
+  lock_release(&thread_current()->pcb->kernel_lock);
   lock_release(&thread_current()->pcb->kernel_lock);
   asm volatile("movl %0, %%esp; jmp intr_exit" : : "g"(&if_) : "memory");
   NOT_REACHED();
