@@ -45,7 +45,7 @@ struct shared_data {
 
 // Add shared data for tracking process exit status for exec, wait, and exit
 struct thread_list_elem {
-  struct thread* thread;
+  tid_t tid;
   struct shared_data* exit_status;
   struct list_elem elem;
 };

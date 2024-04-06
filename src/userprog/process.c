@@ -130,7 +130,6 @@ void fdt_destroy(struct list* fdt) {
 pid_t process_execute(const char* file_name) {
   char* fn_copy;
   tid_t tid;
-  // printf("Process execute has been called %s", file_name);
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
@@ -201,8 +200,9 @@ static void start_process(void** args) {
     lock_init(&(t->pcb->kernel_lock));
 
     // Push the current thread on to the pcb
-    tle->thread = t;
-    tle->exit_status = child_pid_data;
+    tle->tid = t->tid;
+    // tle->exit_status = child_pid_data;
+    tle->exit_status = initialize_shared_data(thread_current()->tid);
     list_push_back(&(t->pcb->thread_list), &(tle->elem));
 
     struct shared_data* exit_code_data = initialize_shared_data(t->tid);
@@ -826,7 +826,7 @@ static void start_pthread(void** args) {
     free(new_thread_elem);
     return;
   }
-  new_thread_elem->thread = t;
+  new_thread_elem->tid = t->tid;
   new_thread_elem->exit_status = initialize_shared_data(thread_current()->tid);
 
   // 6. Adds the new thread to the list of threads in the PCB
@@ -893,8 +893,7 @@ tid_t pthread_join(tid_t tid UNUSED) {
   for (e = list_begin(&thread_current()->pcb->thread_list);
        e != list_end(&thread_current()->pcb->thread_list); e = list_next(e)) {
     struct thread_list_elem* thread_elem = list_entry(e, struct thread_list_elem, elem);
-    struct thread* t = thread_elem->thread;
-    if (t->tid == tid) {
+    if (thread_elem->tid == tid) {
       // TODO Must drop locks to prevent a deadlock
       lock_release(&thread_current()->pcb->kernel_lock);
       wait_for_data(thread_elem->exit_status);
@@ -935,12 +934,7 @@ void pthread_exit(void) {
   for (e = list_begin(&thread_current()->pcb->thread_list);
        e != list_end(&thread_current()->pcb->thread_list); e = list_next(e)) {
     struct thread_list_elem* thread_elem = list_entry(e, struct thread_list_elem, elem);
-    struct thread* t = thread_elem->thread;
-    if (t->tid == cur->tid) {
-      // TODO Must drop locks to prevent a deadlock
-      if (t->tid > 65) {
-        printf("Here");
-      }
+    if (thread_elem->tid == cur->tid) {
       save_data(thread_elem->exit_status, 0);
       break;
     }
