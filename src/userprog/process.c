@@ -181,6 +181,7 @@ static void start_process(void** args) {
     // does not try to activate our uninitialized pagedir
     new_pcb->pagedir = NULL;
     t->pcb = new_pcb;
+    t->pcb->is_exiting = false;
 
     // Continue initializing the PCB as normal
     t->pcb->main_thread = t;
@@ -306,6 +307,17 @@ int process_wait(pid_t child_pid) {
 void process_exit(int exit_code) {
   struct thread* cur = thread_current();
   uint32_t* pd;
+
+  // Shut down all the active threads
+  cur->pcb->is_exiting = true;
+  for (struct list_elem* e = list_begin(&cur->pcb->thread_list);
+       e != list_end(&cur->pcb->thread_list); e = list_next(e)) {
+    // join on all the threads
+    struct thread_list_elem* tle = list_entry(e, struct thread_list_elem, elem);
+    if (tle->tid != cur->tid) {
+      pthread_join(tle->tid);
+    }
+  }
 
   printf("%s: exit(%d)\n", thread_current()->pcb->process_name, exit_code);
   save_data(cur->pcb->exit_code_data, exit_code);

@@ -68,6 +68,7 @@ struct process {
   struct list thread_list;             /* List of active threads in the process*/
   // gradescope said we needed this
   struct lock kernel_lock; /* Lock for the process */
+  bool is_exiting;
 };
 
 void userprog_init(void);

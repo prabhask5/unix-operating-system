@@ -333,6 +333,19 @@ void intr_handler(struct intr_frame* frame) {
     yield_on_return = false;
   }
 
+  // If the interrupt is from user space then we should check to see if the program
+  // should exit
+  // is_trap_from_userspace
+  // print if is exiting
+  // if(*thread_current() != NULL && *thread_current()->pcb->is_exiting){
+  //     printf("is exiting: %d\n", *thread_current()->pcb);
+  // }
+  if (is_trap_from_userspace(frame)) {
+    // if (thread_current()->pcb->is_exiting) {
+    //   pthread_exit(NULL);
+  }
+  // }
+
   /* Invoke the interrupt's handler. */
   handler = intr_handlers[frame->vec_no];
   if (handler != NULL)
