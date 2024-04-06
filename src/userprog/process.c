@@ -744,13 +744,12 @@ bool setup_thread(void (**eip)(void) UNUSED, void** esp) {
   // 2. Install the page at ((uint8_t*)PHYS_BASE) - PGSIZE * NUM_THREADS * PAGES_PER_THREAD
   //     1. Each thread initially gets one page of memory (hack, can change depending on if this works?)
   //     2. NUM_THREADS can be determined dynamically based on the length of the thread list in the PCB minus 1
-  int PAGES_PER_THREAD = 1; // TODO define this somewhere else
   int i = 1;
   bool page_allocated = false;
   void* upage;
   while (!page_allocated) {
     // upage defines the ___ of the page
-    upage = (void*)PHYS_BASE - i * PAGES_PER_THREAD * PGSIZE;
+    upage = (void*)PHYS_BASE - i * PGSIZE;
     // Check if the page is already allocated (pagedir_get_page returns NULL if not allocated)
     if (!pagedir_get_page(thread_current()->pcb->pagedir, upage)) {
       // If the page is not already allocated, install the page for the new stack here
@@ -806,7 +805,6 @@ tid_t pthread_execute(stub_fun sf, pthread_fun tf, void* arg) {
    This function will be implemented in Project 2: Multithreading and
    should be similar to start_process (). For now, it does nothing. */
 static void start_pthread(void** args) {
-  // lock_acquire(&thread_current()->pcb->kernel_lock);
 
   // 1. Takes in the parent pcb, function to execute, and its arguments
   // TODO clean this up
@@ -815,10 +813,11 @@ static void start_pthread(void** args) {
   void* arg = args[2];
   struct shared_data* thread_shared_data = args[3];
   struct process* parent_pcb = args[4];
-
   struct thread* t = thread_current();
   t->pcb = parent_pcb;
   process_activate();
+
+  lock_acquire(&thread_current()->pcb->kernel_lock);
 
   // 5. Allocates new thread_list_elem
   struct thread_list_elem* new_thread_elem = malloc(sizeof(struct thread_list_elem));
@@ -842,7 +841,7 @@ static void start_pthread(void** args) {
   if (!setup_thread(&if_.eip, &if_.esp)) {
     save_data(thread_shared_data, 0);
     free(new_thread_elem);
-    // lock_release(&thread_current()->pcb->kernel_lock);
+    lock_release(&thread_current()->pcb->kernel_lock);
     return;
   }
 
@@ -850,29 +849,19 @@ static void start_pthread(void** args) {
   // 3. Places function args onto the top of the allocated stack
   // ADD ARGUMENTS TO STACK
   // See https://cs162.org/static/proj/pintos-docs/docs/userprog/program-startup/
-  // TODO get this working
-
-  // Push the function pointer to the stack
-  // void* paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
-  // TODO figure out if we are supposed to use virtual addresses or physical addresses for memcpy
 
   // Push the arg to the stack
   if_.esp -= sizeof(void*);
-  // void* paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
   memcpy(if_.esp, &arg, sizeof(void*));
 
+  // Push the function pointer to the stack
   if_.esp -= sizeof(void*);
-  // paddr -= sizeof(void*);
-  // paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
   memcpy(if_.esp, &tf, sizeof(void*));
 
   // 4. Set the return address to NULL
   // Push the dummy (null) return address to the stack
   if_.esp -= sizeof(void*);
-  // paddr = pagedir_get_page(thread_current()->pcb->pagedir, if_.esp);
-
-  // memset(if_.esp, 0, sizeof(NULL));
-  // *(void**)if_.esp = NULL;
+  memset(if_.esp, 0, sizeof(NULL));
 
   // 9. Sets eip to the start of the function
   if_.eip = sf;
@@ -881,7 +870,7 @@ static void start_pthread(void** args) {
   save_data(thread_shared_data, 1);
 
   // 10. Simulates return from interrupt similar to in start_process
-  // lock_release(&thread_current()->pcb->kernel_lock);
+  lock_release(&thread_current()->pcb->kernel_lock);
   asm volatile("movl %0, %%esp; jmp intr_exit" : : "g"(&if_) : "memory");
   NOT_REACHED();
 }
@@ -894,7 +883,6 @@ static void start_pthread(void** args) {
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. */
 tid_t pthread_join(tid_t tid UNUSED) {
-  // printf("Joining");
   lock_acquire(&thread_current()->pcb->kernel_lock);
   // Verify it is not being called on itself
   if (tid == thread_current()->tid) {
@@ -950,6 +938,9 @@ void pthread_exit(void) {
     struct thread* t = thread_elem->thread;
     if (t->tid == cur->tid) {
       // TODO Must drop locks to prevent a deadlock
+      if (t->tid > 65) {
+        printf("Here");
+      }
       save_data(thread_elem->exit_status, 0);
       break;
     }
