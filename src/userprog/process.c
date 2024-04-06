@@ -930,8 +930,7 @@ void pthread_exit(void) {
   }
 
   // Populate exit status
-  struct list_elem* e;
-  for (e = list_begin(&thread_current()->pcb->thread_list);
+  for (struct list_elem* e = list_begin(&thread_current()->pcb->thread_list);
        e != list_end(&thread_current()->pcb->thread_list); e = list_next(e)) {
     struct thread_list_elem* thread_elem = list_entry(e, struct thread_list_elem, elem);
     if (thread_elem->tid == cur->tid) {
@@ -953,4 +952,35 @@ void pthread_exit(void) {
 
    This function will be implemented in Project 2: Multithreading. For
    now, it does nothing. */
-void pthread_exit_main(void) {}
+void pthread_exit_main(void) {
+  lock_acquire(&thread_current()->pcb->kernel_lock);
+  struct thread* curr = thread_current();
+
+  for (struct list_elem* e = list_begin(&thread_current()->pcb->thread_list);
+       e != list_end(&thread_current()->pcb->thread_list); e = list_next(e)) {
+    struct thread_list_elem* thread_elem = list_entry(e, struct thread_list_elem, elem);
+    if (thread_elem->tid == curr->tid) {
+      save_data(thread_elem->exit_status, 0);
+      break;
+    }
+  }
+
+  for (struct list_elem* e = list_begin(&thread_current()->pcb->thread_list);
+       e != list_end(&thread_current()->pcb->thread_list); e = list_next(e)) {
+    struct thread_list_elem* thread_elem = list_entry(e, struct thread_list_elem, elem);
+    if (thread_elem->tid != curr->tid) {
+      lock_release(&thread_current()->pcb->kernel_lock);
+      pthread_join(thread_elem->tid);
+      lock_acquire(&thread_current()->pcb->kernel_lock);
+    }
+  }
+
+  void* upage = curr->upage;
+  if (upage != NULL) {
+    uint32_t* pd = curr->pcb->pagedir;
+    pagedir_clear_page(pd, upage);
+  }
+
+  lock_release(&thread_current()->pcb->kernel_lock);
+  process_exit(0);
+}

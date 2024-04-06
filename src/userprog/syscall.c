@@ -474,18 +474,27 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
   // user pthread syscalls
   else if (args[0] == SYS_PT_CREATE) {
-    // TODO validate args (sfun, tfun, arg)
-    // call pthread_execute
+    if (!syscall_validate_word(args + 1) || !syscall_validate_word(args + 2) ||
+        !syscall_validate_word(args + 3)) {
+      process_exit(-1);
+      return;
+    }
+
     f->eax = pthread_execute((stub_fun)args[1], (pthread_fun)args[2], (void*)args[3]);
   } else if (args[0] == SYS_PT_EXIT) {
-    pthread_exit();
-
+    if (thread_current()->pcb && is_main_thread(thread_current(), thread_current()->pcb)) {
+      pthread_exit_main();
+    } else {
+      pthread_exit();
+    }
   } else if (args[0] == SYS_PT_JOIN) {
-    // TODO validate args ()
-    // call pthread_join
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
     f->eax = pthread_join((tid_t)args[1]);
   } else if (args[0] == SYS_GET_TID) {
-    // Return thread_tid()
     f->eax = thread_tid();
   }
 }
