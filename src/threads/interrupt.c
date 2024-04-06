@@ -12,6 +12,7 @@
 #ifdef USERPROG
 #include "userprog/gdt.h"
 #include "userprog/process.h"
+#include "lib/syscall-nr.h"
 #endif
 
 /* Programmable Interrupt Controller (PIC) registers.
@@ -339,7 +340,8 @@ void intr_handler(struct intr_frame* frame) {
   if (is_trap_from_userspace(frame)) {
     struct thread* t = thread_current();
     if (t->pcb->is_exiting) {
-      pthread_exit();
+      frame->vec_no = 0x30;
+      *(uint32_t*)frame->esp = SYS_PT_EXIT;
     }
   }
 
