@@ -174,6 +174,7 @@ static void start_process(void** args) {
   struct process* new_pcb = malloc(sizeof(struct process));
   struct thread_list_elem* tle = malloc(sizeof(struct thread_list_elem));
   success = pcb_success = new_pcb != NULL;
+  success = success && tle != NULL;
 
   /* Initialize process control block */
   if (success) {
@@ -197,14 +198,24 @@ static void start_process(void** args) {
     list_init(&(t->pcb->children_exit_code_data));
     list_init(&(t->pcb->thread_list));
 
+    for (int i = 0; i < MAX_SYN; i++) {
+      t->pcb->user_locks[i] = NULL;
+      t->pcb->user_semaphores[i] = NULL;
+    }
+    t->pcb->next_lock = 0;
+    t->pcb->next_semaphore = 0;
+
     // Init the lock
     lock_init(&(t->pcb->kernel_lock));
 
     // Push the current thread on to the pcb
     tle->tid = t->tid;
     // tle->exit_status = child_pid_data;
-    tle->exit_status = initialize_shared_data(thread_current()->tid);
-    list_push_back(&(t->pcb->thread_list), &(tle->elem));
+    struct shared_data* thread_status_data = initialize_shared_data(thread_current()->tid);
+    success = success && thread_status_data != NULL;
+
+    if (thread_status_data != NULL)
+      tle->exit_status = thread_status_data;
 
     struct shared_data* exit_code_data = initialize_shared_data(t->tid);
     struct shared_data* child_pid_data = initialize_shared_data(t->tid);
@@ -252,6 +263,11 @@ static void start_process(void** args) {
   /* Clean up. Exit on failure or jump to userspace */
   palloc_free_page(file_name);
   if (!success) {
+    if (tle != NULL) {
+      if (tle->exit_status != NULL)
+        free(tle->exit_status);
+      free(tle);
+    }
     save_data(child_pid_data, -1);
     thread_exit();
   } else {
@@ -264,6 +280,7 @@ static void start_process(void** args) {
     }
 
     list_push_back(&(parent_pcb->children_exit_code_data), &(t->pcb->exit_code_data->elem));
+    list_push_back(&(t->pcb->thread_list), &(tle->elem));
     save_data(child_pid_data, t->tid);
   }
 
@@ -352,6 +369,23 @@ void process_exit(int exit_code) {
 
   /* Free the file descriptor table and any file descriptors that are still open */
   fdt_destroy(&cur->pcb->fdt);
+
+  lock_acquire(&thread_current()->pcb->kernel_lock);
+  for (int i = 0; i < cur->pcb->next_lock; i++) {
+    if (cur->pcb->user_locks[i] != NULL) {
+      struct lock* lock_to_free = cur->pcb->user_locks[i];
+      cur->pcb->user_locks[i] = NULL;
+      free(lock_to_free);
+    }
+  }
+  for (int i = 0; i < cur->pcb->next_semaphore; i++) {
+    if (cur->pcb->user_semaphores[i]) {
+      struct semaphore* sema_to_free = cur->pcb->user_semaphores[i];
+      cur->pcb->user_semaphores[i] = NULL;
+      free(sema_to_free);
+    }
+  }
+  lock_release(&thread_current()->pcb->kernel_lock);
 
   /* Free the PCB of this process and kill this thread
      Avoid race where PCB is freed before t->pcb is set to NULL
@@ -820,6 +854,7 @@ static void start_pthread(void** args) {
 
   // 1. Takes in the parent pcb, function to execute, and its arguments
   // TODO clean this up
+  struct intr_frame if_;
   stub_fun sf = args[0];
   pthread_fun tf = args[1];
   void* arg = args[2];
@@ -833,29 +868,36 @@ static void start_pthread(void** args) {
 
   // 5. Allocates new thread_list_elem
   struct thread_list_elem* new_thread_elem = malloc(sizeof(struct thread_list_elem));
-  if (new_thread_elem == NULL) {
-    save_data(thread_shared_data, 0);
-    free(new_thread_elem);
-    return;
-  }
-  new_thread_elem->tid = t->tid;
-  new_thread_elem->exit_status = initialize_shared_data(thread_current()->tid);
+  bool success = new_thread_elem != NULL;
 
-  // 6. Adds the new thread to the list of threads in the PCB
-  // TODO figure out why this segfaults
-  list_push_back(&thread_current()->pcb->thread_list, &new_thread_elem->elem);
+  if (success) {
+    new_thread_elem->tid = t->tid;
+    struct shared_data* thread_status_data = initialize_shared_data(thread_current()->tid);
+    success = success && thread_status_data != NULL;
+    if (thread_shared_data != NULL) {
+      new_thread_elem->exit_status = thread_shared_data;
+    }
+  }
 
   // Calls setup_thread to allocated user memory on for the stack
-  struct intr_frame if_;
-  if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
-  if_.cs = SEL_UCSEG;
-  if_.eflags = FLAG_IF | FLAG_MBS;
-  if (!setup_thread(&if_.eip, &if_.esp)) {
+  if (success) {
+    if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
+    if_.cs = SEL_UCSEG;
+    if_.eflags = FLAG_IF | FLAG_MBS;
+    success = success && setup_thread(&if_.eip, &if_.esp);
+  }
+
+  if (!success) {
+    if (new_thread_elem != NULL) {
+      if (new_thread_elem->exit_status != NULL)
+        free(new_thread_elem->exit_status);
+      free(new_thread_elem);
+    }
     save_data(thread_shared_data, 0);
-    free(new_thread_elem);
     lock_release(&thread_current()->pcb->kernel_lock);
     return;
-  }
+  } else
+    list_push_back(&thread_current()->pcb->thread_list, &new_thread_elem->elem);
 
   // 8. Sets esp to the address of the return address
   // 3. Places function args onto the top of the allocated stack

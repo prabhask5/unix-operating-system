@@ -31,6 +31,7 @@
 #include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "userprog/process.h"
 
 void rehash_waiter(struct thread*);
 bool priority_less_sema(struct list_elem*, struct list_elem*, void* aux UNUSED);
@@ -468,4 +469,114 @@ void rehash_waiter(struct thread* t) {
     list_insert_ordered(&t->waiting_for_cond->waiters_priority_array, &waiter->elem,
                         priority_less_cond, NULL);
   }
+}
+
+bool user_lock_init(char* lock) {
+  lock_acquire(&thread_current()->pcb->kernel_lock);
+  struct process* curr_pcb = thread_current()->pcb;
+  if (lock == NULL || curr_pcb->next_lock > 255) {
+    lock_release(&thread_current()->pcb->kernel_lock);
+    return false;
+  }
+
+  struct lock* curr_lock = malloc(sizeof(struct lock));
+  if (curr_lock == NULL) {
+    lock_release(&thread_current()->pcb->kernel_lock);
+    return false;
+  }
+
+  lock_init(curr_lock);
+  curr_pcb->user_locks[curr_pcb->next_lock] = curr_lock;
+  *lock = curr_pcb->next_lock;
+  curr_pcb->next_lock++;
+
+  lock_release(&thread_current()->pcb->kernel_lock);
+  return true;
+}
+
+bool user_lock_acquire(char* lock) {
+  lock_acquire(&thread_current()->pcb->kernel_lock);
+  struct process* curr_pcb = thread_current()->pcb;
+  if (lock == NULL || 0 > *lock || *lock >= curr_pcb->next_lock) {
+    lock_release(&thread_current()->pcb->kernel_lock);
+    return false;
+  }
+
+  struct lock* mapped_lock = curr_pcb->user_locks[*lock];
+  if (lock_held_by_current_thread(mapped_lock)) {
+    lock_release(&thread_current()->pcb->kernel_lock);
+    return false;
+  }
+
+  lock_release(&thread_current()->pcb->kernel_lock);
+  lock_acquire(mapped_lock);
+  return true;
+}
+
+bool user_lock_release(char* lock) {
+  lock_acquire(&thread_current()->pcb->kernel_lock);
+  struct process* curr_pcb = thread_current()->pcb;
+  if (lock == NULL || 0 > *lock || *lock >= curr_pcb->next_lock) {
+    lock_release(&thread_current()->pcb->kernel_lock);
+    return false;
+  }
+
+  struct lock* mapped_lock = curr_pcb->user_locks[*lock];
+  if (!lock_held_by_current_thread(mapped_lock)) {
+    lock_release(&thread_current()->pcb->kernel_lock);
+    return false;
+  }
+
+  lock_release(&thread_current()->pcb->kernel_lock);
+  lock_release(mapped_lock);
+  return true;
+}
+
+bool user_sema_init(char* sema, int val) {
+  lock_acquire(&thread_current()->pcb->kernel_lock);
+  struct process* curr_pcb = thread_current()->pcb;
+  if (sema == NULL || curr_pcb->next_semaphore > 255 || val < 0) {
+    lock_release(&thread_current()->pcb->kernel_lock);
+    return false;
+  }
+
+  struct semaphore* curr_sema = malloc(sizeof(struct semaphore));
+  if (curr_sema == NULL) {
+    lock_release(&thread_current()->pcb->kernel_lock);
+    return false;
+  }
+
+  sema_init(curr_sema, val);
+  curr_pcb->user_semaphores[curr_pcb->next_semaphore] = curr_sema;
+  *sema = curr_pcb->next_semaphore;
+  curr_pcb->next_semaphore++;
+
+  lock_release(&thread_current()->pcb->kernel_lock);
+  return true;
+}
+
+bool user_sema_down(char* sema) {
+  lock_acquire(&thread_current()->pcb->kernel_lock);
+  struct process* curr_pcb = thread_current()->pcb;
+  if (sema == NULL || 0 > *sema || *sema >= curr_pcb->next_semaphore) {
+    lock_release(&thread_current()->pcb->kernel_lock);
+    return false;
+  }
+
+  lock_release(&thread_current()->pcb->kernel_lock);
+  sema_down(curr_pcb->user_semaphores[*sema]);
+  return true;
+}
+
+bool user_sema_up(char* sema) {
+  lock_acquire(&thread_current()->pcb->kernel_lock);
+  struct process* curr_pcb = thread_current()->pcb;
+  if (sema == NULL || 0 > *sema || *sema >= curr_pcb->next_semaphore) {
+    lock_release(&thread_current()->pcb->kernel_lock);
+    return false;
+  }
+
+  lock_release(&thread_current()->pcb->kernel_lock);
+  sema_up(curr_pcb->user_semaphores[*sema]);
+  return true;
 }

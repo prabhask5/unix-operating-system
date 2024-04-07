@@ -496,5 +496,47 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     f->eax = pthread_join((tid_t)args[1]);
   } else if (args[0] == SYS_GET_TID) {
     f->eax = thread_tid();
+  } else if (args[0] == SYS_LOCK_INIT) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    f->eax = user_lock_init(args[1]);
+  } else if (args[0] == SYS_LOCK_ACQUIRE) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    f->eax = user_lock_acquire(args[1]);
+  } else if (args[0] == SYS_LOCK_RELEASE) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    f->eax = user_lock_release(args[1]);
+  } else if (args[0] == SYS_SEMA_INIT) {
+    if (!syscall_validate_word(args + 1) || !syscall_validate_word(args + 2)) {
+      process_exit(-1);
+      return;
+    }
+
+    f->eax = user_sema_init(args[1], args[2]);
+  } else if (args[0] == SYS_SEMA_DOWN) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    f->eax = user_sema_down(args[1]);
+  } else if (args[0] == SYS_SEMA_UP) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    f->eax = user_sema_up(args[1]);
   }
 }

@@ -11,6 +11,7 @@
 #define MAX_STACK_PAGES (1 << 11)
 #define MAX_THREADS 127
 #define MAX_ARGS 50
+#define MAX_SYN 256
 
 /* PIDs and TIDs are the same type. PID should be
    the TID of the main thread of the process */
@@ -69,6 +70,12 @@ struct process {
   // gradescope said we needed this
   struct lock kernel_lock; /* Lock for the process */
   bool is_exiting;
+
+  struct lock* user_locks[MAX_SYN];
+  struct semaphore* user_semaphores[MAX_SYN];
+
+  int next_lock;
+  int next_semaphore;
 };
 
 void userprog_init(void);
