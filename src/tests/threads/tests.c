@@ -8,6 +8,7 @@ static const struct test threads_tests[] = {
     {"alarm-multiple", test_alarm_multiple},
     {"alarm-simultaneous", test_alarm_simultaneous},
     {"alarm-priority", test_alarm_priority},
+    {"alarm-priority-donation", test_alarm_priority_donation},
     {"alarm-zero", test_alarm_zero},
     {"alarm-negative", test_alarm_negative},
     {"priority-change", test_priority_change},

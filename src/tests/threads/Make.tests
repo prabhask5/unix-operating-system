@@ -2,7 +2,7 @@
 
 # Test names.
 tests/threads_TESTS = $(addprefix tests/threads/,alarm-single \
-alarm-multiple alarm-simultaneous alarm-priority alarm-zero \
+alarm-multiple alarm-simultaneous alarm-priority alarm-priority-donation alarm-zero \
 alarm-negative priority-change priority-donate-one \
 priority-donate-multiple priority-donate-multiple2 \
 priority-donate-nest priority-donate-sema priority-donate-lower \
@@ -24,6 +24,7 @@ tests/threads_SRC  = tests/threads/tests.c
 tests/threads_SRC += tests/threads/alarm-wait.c
 tests/threads_SRC += tests/threads/alarm-simultaneous.c
 tests/threads_SRC += tests/threads/alarm-priority.c
+tests/threads_SRC += tests/threads/alarm-priority-donation.c
 tests/threads_SRC += tests/threads/alarm-zero.c
 tests/threads_SRC += tests/threads/alarm-negative.c
 tests/threads_SRC += tests/threads/priority-change.c
@@ -67,7 +68,8 @@ ALARM_TESTS       = $(filter tests/threads/alarm-%,$(tests/threads_TESTS))
 SCHED_PRIO_TESTS  = $(filter tests/threads/priority-%,$(tests/threads_TESTS)) \
                     $(filter tests/threads/mt-matmul%,$(tests/threads_TESTS)) \
                     tests/threads/st-matmul \
-                    tests/threads/alarm-priority
+                    tests/threads/alarm-priority \
+                    tests/threads/alarm-priority-donation
 SCHED_FAIR_TESTS  = $(filter tests/threads/smfs-%,$(tests/threads_TESTS))
 SCHED_MLFQS_TESTS = $(filter tests/threads/mlfqs-%,$(tests/threads_TESTS))
 

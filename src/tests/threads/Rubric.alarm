@@ -3,6 +3,7 @@ Functionality and robustness of alarm clock:
 4	alarm-multiple
 4	alarm-simultaneous
 4	alarm-priority
+4   alarm-priority-donation
 
 1	alarm-zero
 1	alarm-negative

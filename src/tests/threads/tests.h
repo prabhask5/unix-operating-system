@@ -9,6 +9,7 @@ extern test_func test_alarm_single;
 extern test_func test_alarm_multiple;
 extern test_func test_alarm_simultaneous;
 extern test_func test_alarm_priority;
+extern test_func test_alarm_priority_donation;
 extern test_func test_alarm_zero;
 extern test_func test_alarm_negative;
 extern test_func test_priority_change;
