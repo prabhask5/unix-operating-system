@@ -98,7 +98,7 @@ struct thread {
   struct lock* waiting_for_lock;
   struct list held_locks;
 
-  void* upage;
+  uint8_t* user_page_stack;
 
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
@@ -110,6 +110,13 @@ struct thread {
 
   /* Owned by thread.c. */
   unsigned magic; /* Detects stack overflow. */
+};
+
+struct thread_join_elem {
+  tid_t tid;
+  struct semaphore sema;
+  struct list_elem elem;
+  bool is_joining;
 };
 
 /* Types of scheduler that the user can request the kernel

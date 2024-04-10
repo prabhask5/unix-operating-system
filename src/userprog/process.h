@@ -11,7 +11,6 @@
 #define MAX_STACK_PAGES (1 << 11)
 #define MAX_THREADS 127
 #define MAX_ARGS 50
-#define MAX_SYN 256
 
 /* PIDs and TIDs are the same type. PID should be
    the TID of the main thread of the process */
@@ -44,13 +43,6 @@ struct shared_data {
   struct list_elem elem;
 };
 
-// Add shared data for tracking process exit status for exec, wait, and exit
-struct thread_list_elem {
-  tid_t tid;
-  struct shared_data* exit_status;
-  struct list_elem elem;
-};
-
 /* The process control block for a given process. Since
    there can be multiple threads per process, we need a separate
    PCB from the TCB. All TCBs in a process will have a pointer
@@ -66,16 +58,15 @@ struct process {
   struct shared_data*
       exit_code_data; /* Contains current processes exit information (shared with parent pcb in children_exit_code_data) */
   struct list children_exit_code_data; /* List of process_exit_code_t */
-  struct list thread_list;             /* List of active threads in the process*/
-  // gradescope said we needed this
-  struct lock kernel_lock; /* Lock for the process */
+
+  struct list user_locks;
+  struct list user_semaphores;
+  int next_lockid;
+  int next_semaphoreid;
+
+  struct list unjoined_threads;
+  struct lock kernel_lock;
   bool is_exiting;
-
-  struct lock* user_locks[MAX_SYN];
-  struct semaphore* user_semaphores[MAX_SYN];
-
-  int next_lock;
-  int next_semaphore;
 };
 
 void userprog_init(void);

@@ -278,13 +278,17 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     struct file* file = filesys_open((char*)args[1]);
 
     if (file == NULL) {
-
       f->eax = -1;
       lock_release(&syscall_lock);
       return;
     }
 
     struct file_descriptor_elem* fd = malloc(sizeof(struct file_descriptor_elem));
+    if (fd == NULL) {
+      f->eax = -1;
+      lock_release(&syscall_lock);
+      return;
+    }
 
     fd->f = file;
     fd->id = generate_fid();
@@ -470,9 +474,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       return;
     }
     f->eax = sys_sum_to_e(args[1]);
-  }
-
-  // user pthread syscalls
+  } // user pthread syscalls
   else if (args[0] == SYS_PT_CREATE) {
     if (!syscall_validate_word(args + 1) || !syscall_validate_word(args + 2) ||
         !syscall_validate_word(args + 3)) {
@@ -488,20 +490,18 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       pthread_exit();
     }
   } else if (args[0] == SYS_PT_JOIN) {
-<<<<<<< HEAD
     if (!syscall_validate_word(args + 1)) {
       process_exit(-1);
       return;
     }
 
-=======
-    // TODO validate args ()
-    // call pthread_join
->>>>>>> 31f700d (add return value for join)
     f->eax = pthread_join((tid_t)args[1]);
   } else if (args[0] == SYS_GET_TID) {
     f->eax = thread_tid();
-  } else if (args[0] == SYS_LOCK_INIT) {
+  }
+
+  /* User synchronization syscalls */
+  else if (args[0] == SYS_LOCK_INIT) {
     if (!syscall_validate_word(args + 1)) {
       process_exit(-1);
       return;

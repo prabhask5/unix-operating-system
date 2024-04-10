@@ -10,6 +10,12 @@ struct semaphore {
   struct list waiters_priority_array; /* List of waiting threads. */
 };
 
+struct user_semaphore {
+  struct semaphore* mapped_sema;
+  int sema_id;
+  struct list_elem elem;
+};
+
 void sema_init(struct semaphore*, unsigned value);
 void sema_down(struct semaphore*);
 bool sema_try_down(struct semaphore*);
@@ -20,6 +26,12 @@ void sema_self_test(void);
 struct lock {
   struct thread* holder;      /* Thread holding lock (for debugging). */
   struct semaphore semaphore; /* Binary semaphore controlling access. */
+  struct list_elem elem;
+};
+
+struct user_lock {
+  struct lock* mapped_lock;
+  int lock_id;
   struct list_elem elem;
 };
 
