@@ -46,6 +46,10 @@ void userprog_init(void) {
      can come at any time and activate our pagedir */
   t->pcb = calloc(sizeof(struct process), 1);
   success = t->pcb != NULL;
+  t->pcb->main_thread = t;
+  // t->pcb->cwd = dir_open_root();
+
+  list_init(&(t->pcb->children_exit_code_data));
 
   /* Kill the kernel if we did not succeed */
   ASSERT(success);
@@ -229,11 +233,16 @@ static void start_process(void** args) {
   // CWD setup
 
   // parent's CWD, else root
-  if (parent_pcb->main_thread != NULL && parent_pcb->main_thread->cwd != NULL) {
-    t->cwd = dir_reopen(parent_pcb->main_thread->cwd);
+  if (parent_pcb->cwd != NULL) {
+    t->pcb->cwd = dir_reopen(parent_pcb->cwd);
   } else {
-    t->cwd = dir_open_root();
+    t->pcb->cwd = dir_open_root();
   }
+
+  // Confirm t->pcb->cwd->inode->data->dir is true
+  // if(!t->pcb->cwd->inode->data->dir){
+  //   *NULL;
+  // }
 
   /* Handle failure with succesful PCB malloc. Must free the PCB */
   if (!success && pcb_success) {
@@ -397,6 +406,19 @@ void process_exit(int exit_code) {
     cur->pcb->pagedir = NULL;
     pagedir_activate(NULL);
     pagedir_destroy(pd);
+  }
+
+  if (cur->pcb->spawn_file != NULL) {
+    file_allow_write(cur->pcb->spawn_file);
+    file_close(cur->pcb->spawn_file);
+    cur->pcb->spawn_file = NULL; // Prevent dangling pointer
+  }
+
+  /* Free the file descriptor table and any file descriptors that are still open */
+  fdt_destroy(&cur->pcb->fdt);
+
+  if (cur->pcb->cwd != NULL) {
+    dir_close(cur->pcb->cwd);
   }
 
   /* Free the PCB of this process and kill this thread

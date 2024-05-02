@@ -6,6 +6,7 @@
 #include "filesys/inode.h"
 #include "threads/malloc.h"
 #include "../threads/thread.h"
+#include "userprog/process.h"
 
 /* A directory. */
 struct dir {
@@ -166,6 +167,8 @@ bool dir_add(struct dir* dir, const char* name, block_sector_t inode_sector, boo
   e.inode_sector = inode_sector;
   success = inode_write_at(dir->inode, &e, sizeof e, ofs) == sizeof e;
 
+  // TODO: write something that refers back to parent
+
 done:
   return success;
 }
@@ -262,10 +265,10 @@ struct inode* path_to_inode(const char* path) {
   }
 
   // Determine if the path is absolute or relative
-  if (path[0] == '/') {
+  if (path[0] == '/' || !thread_current()->pcb->cwd) {
     dir = dir_open_root();
   } else {
-    dir = dir_reopen(thread_current()->cwd);
+    dir = dir_reopen(thread_current()->pcb->cwd);
   }
 
   if (dir == NULL) {
@@ -312,43 +315,112 @@ struct inode* path_to_inode(const char* path) {
   return inode;
 }
 
-struct dir* path_to_dir(const char* path) {
+// struct dir* path_to_dir(const char* path) {
+//   struct dir* dir = NULL;
+//   struct inode* inode = NULL;
+
+//   if (path == NULL || strlen(path) == 0)
+//     return NULL;
+
+//   if (path[0] == '/') {
+//     dir = dir_open_root();
+//   } else {
+//     dir = dir_reopen(thread_current()->cwd);
+//   }
+
+//   if (dir == NULL)
+//     return NULL;
+
+//   char part[NAME_MAX + 1];
+//   const char* next_part = path;
+//   struct dir* parent_dir = dir;
+
+//   while (get_next_part(part, &next_part) == 1) {
+//     if (*next_part == '\0') {
+
+//       return parent_dir;
+//     }
+
+//     if (!dir_lookup(dir, part, &inode) || !inode_is_dir(inode)) {
+//       dir_close(parent_dir);
+//       if (inode != NULL)
+//         inode_close(inode);
+//       return NULL;
+//     }
+
+//     dir_close(parent_dir);
+//     parent_dir = dir_open(inode);
+//     inode_close(inode);
+//   }
+
+//   return parent_dir;
+// }
+
+/* helper, given a/b/c, it puts a pointer to a/b in dir_path, and c as a char into final name.
+
+
+if any part in the dir_path doesn't exist or is not a dir, it returns false
+
+*/
+
+bool parse_path(const char* path, struct dir** dir_path, char* final_name) {
+  if (path == NULL || dir_path == NULL || final_name == NULL)
+    return false;
+
+  const char* src = path;
+  char part[NAME_MAX + 1];
   struct dir* dir = NULL;
   struct inode* inode = NULL;
 
-  if (path == NULL || strlen(path) == 0)
-    return NULL;
-
-  if (path[0] == '/') {
+  // root if absolute
+  if (*src == '/' || !thread_current()->pcb->cwd)
     dir = dir_open_root();
-  } else {
-    dir = dir_reopen(thread_current()->cwd);
-  }
+  else
+    dir = dir_reopen(thread_current()->pcb->cwd);
 
   if (dir == NULL)
-    return NULL;
+    return false;
 
-  char part[NAME_MAX + 1];
-  const char* next_part = path;
-  struct dir* parent_dir = dir;
+  struct dir* prev_dir = NULL;
+  bool success = true;
 
-  while (get_next_part(part, &next_part) == 1) {
-    if (*next_part == '\0') {
-
-      return parent_dir;
+  while (get_next_part(part, &src) == 1) {
+    // last part
+    if (*src == '\0') {
+      strlcpy(final_name, part, NAME_MAX + 1);
+      *dir_path = dir; // set dir ptr to dir uptill this part, so a/b<- /c
+      return true;
     }
 
-    if (!dir_lookup(dir, part, &inode) || !inode_is_dir(inode)) {
-      dir_close(parent_dir);
-      if (inode != NULL)
-        inode_close(inode);
-      return NULL;
+    // does next part exist?
+    if (!dir_lookup(dir, part, &inode)) {
+      success = false;
+      break;
     }
 
-    dir_close(parent_dir);
-    parent_dir = dir_open(inode);
+    // is it a directory and not a file?
+    if (inode != NULL && !inode_is_dir(inode)) {
+      inode_close(inode);
+      success = false;
+      break;
+    }
+
+    prev_dir = dir;        // save a pointer to prev dir so we can close
+    dir = dir_open(inode); // the current dir is now the new part of the path
+    if (dir == NULL) {
+      inode_close(inode);
+      success = false;
+      break;
+    }
+
     inode_close(inode);
+    dir_close(prev_dir);
   }
 
-  return parent_dir;
+  if (!success) {
+    dir_close(dir);
+    return false;
+  }
+
+  return true;
 }
