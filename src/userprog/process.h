@@ -61,15 +61,6 @@ struct process {
   struct list children_exit_code_data; /* List of process_exit_code_t */
 
   struct dir* cwd;
-
-  struct list user_locks;
-  struct list user_semaphores;
-  int next_lockid;
-  int next_semaphoreid;
-
-  struct list unjoined_threads;
-  struct lock kernel_lock;
-  bool is_exiting;
 };
 
 void userprog_init(void);

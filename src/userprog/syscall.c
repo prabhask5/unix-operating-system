@@ -11,7 +11,6 @@
 #include "filesys/filesys.h"
 #include "filesys/directory.h"
 #include "filesys/inode.h"
-
 #include <string.h>
 #include <stdlib.h>
 // Global syscall lock
@@ -140,53 +139,55 @@ int generate_fid() {
 //     return success;
 // }
 
-static bool sys_mkdir(const char* dir_path) {
-  char* path_copy = malloc(strlen(dir_path) + 1);
-  if (path_copy == NULL)
-    return false;
-  strlcpy(path_copy, dir_path, strlen(dir_path) + 1);
+// static bool sys_mkdir(const char* dir_path) {
+//   char* path_copy = malloc(strlen(dir_path) + 1);
+//   if (path_copy == NULL)
+//     return false;
+//   strlcpy(path_copy, dir_path, strlen(dir_path) + 1);
 
-  char part[NAME_MAX + 1];
-  struct dir* dir = (path_copy[0] == '/') ? dir_open_root() : dir_reopen(thread_current()->cwd);
-  if (dir == NULL) {
-    free(path_copy);
-    return false;
-  }
+//   char part[NAME_MAX + 1];
+//   // struct dir* dir = (path_copy[0] == '/') ? dir_open_root() : dir_reopen(thread_current()->cwd);
+//   struct dir* dir = dir_reopen(thread_current()->cwd);
+//   ASSERT(inode_is_dir(dir->inode)== true);
+//   if (dir == NULL) {
+//     free(path_copy);
+//     return false;
+//   }
 
-  const char* next = path_copy;
-  struct inode* inode = NULL;
-  bool success = false;
+//   const char* next = path_copy;
+//   struct inode* inode = NULL;
+//   bool success = false;
 
-  while (get_next_part(part, &next) == 1) {
-    if (dir_lookup(dir, part, &inode)) {
-      if (*next == '\0' || !inode_is_dir(inode)) {
-        inode_close(inode);
-        break;
-      }
-      struct dir* next_dir = dir_open(inode);
-      inode_close(inode); // Close old inode after opening dir
-      dir_close(dir);     // Close current directory before moving to the next
-      dir = next_dir;
-    } else {
-      if (*next == '\0') { // This is the last part
-        block_sector_t inode_sector = 0;
-        if (free_map_allocate(1, &inode_sector) && dir_create(inode_sector, 16)) {
-          success = dir_add(dir, part, inode_sector, true);
-          if (!success) {
-            free_map_release(inode_sector, 1);
-          }
-        }
-        break;
-      } else {
-        break; // Part of path does not exist and is not the last part
-      }
-    }
-  }
+//   while (get_next_part(part, &next) == 1) {
+//     if (dir_lookup(dir, part, &inode)) {
+//       if (*next == '\0' || !inode_is_dir(inode)) {
+//         inode_close(inode);
+//         break;
+//       }
+//       struct dir* next_dir = dir_open(inode);
+//       inode_close(inode); // Close old inode after opening dir
+//       dir_close(dir);     // Close current directory before moving to the next
+//       dir = next_dir;
+//     } else {
+//       if (*next == '\0') { // This is the last part
+//         block_sector_t inode_sector = 0;
+//         if (free_map_allocate(1, &inode_sector) && dir_create(inode_sector, 16)) {
+//           success = dir_add(dir, part, inode_sector, true);
+//           if (!success) {
+//             free_map_release(inode_sector, 1);
+//           }
+//         }
+//         break;
+//       } else {
+//         break; // Part of path does not exist and is not the last part
+//       }
+//     }
+//   }
 
-  dir_close(dir);
-  free(path_copy);
-  return success;
-}
+//   dir_close(dir);
+//   free(path_copy);
+//   return success;
+// }
 
 static void syscall_handler(struct intr_frame* f UNUSED) {
   uint32_t* args = ((uint32_t*)f->esp);
@@ -343,7 +344,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       return;
     }
 
-    bool retval = filesys_create(args[1], args[2]);
+    bool retval = filesys_create(args[1], args[2], false);
 
     f->eax = retval;
     return;
@@ -549,7 +550,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       return NULL;
     }
 
-    thread_current()->cwd = new_dir;
+    thread_current()->pcb->cwd = new_dir;
 
     f->eax = true;
     return;
@@ -562,7 +563,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       return;
     }
 
-    f->eax = sys_mkdir(args[1]);
+    f->eax = filesys_mkdir(args[1], 1024);
     return;
   }
 }

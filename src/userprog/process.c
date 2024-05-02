@@ -233,11 +233,16 @@ static void start_process(void** args) {
   // CWD setup
 
   // parent's CWD, else root
-  if (parent_pcb->main_thread != NULL && parent_pcb->main_thread->cwd != NULL) {
-    t->cwd = dir_reopen(parent_pcb->main_thread->cwd);
+  if (parent_pcb->cwd != NULL) {
+    t->pcb->cwd = dir_reopen(parent_pcb->cwd);
   } else {
-    t->cwd = dir_open_root();
+    t->pcb->cwd = dir_open_root();
   }
+
+  // Confirm t->pcb->cwd->inode->data->dir is true
+  // if(!t->pcb->cwd->inode->data->dir){
+  //   *NULL;
+  // }
 
   /* Handle failure with succesful PCB malloc. Must free the PCB */
   if (!success && pcb_success) {
