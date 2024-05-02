@@ -226,6 +226,15 @@ static void start_process(void** args) {
     asm volatile("frstor (%0)" ::"g"(curr_fpu_state) : "memory");
   }
 
+  // CWD setup
+
+  // parent's CWD, else root
+  if (parent_pcb->main_thread != NULL && parent_pcb->main_thread->cwd != NULL) {
+    t->cwd = dir_reopen(parent_pcb->main_thread->cwd);
+  } else {
+    t->cwd = dir_open_root();
+  }
+
   /* Handle failure with succesful PCB malloc. Must free the PCB */
   if (!success && pcb_success) {
     // Avoid race where PCB is freed before t->pcb is set to NULL

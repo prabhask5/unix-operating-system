@@ -5,6 +5,7 @@
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "threads/malloc.h"
+#include "../threads/thread.h"
 
 /* A directory. */
 struct dir {
@@ -22,7 +23,27 @@ struct dir_entry {
 /* Creates a directory with space for ENTRY_CNT entries in the
    given SECTOR.  Returns true if successful, false on failure. */
 bool dir_create(block_sector_t sector, size_t entry_cnt) {
-  return inode_create(sector, entry_cnt * sizeof(struct dir_entry));
+  if (!inode_create(sector, entry_cnt * sizeof(struct dir_entry), true)) {
+    return false;
+  }
+
+  struct dir* dir = dir_open(inode_open(sector));
+  if (!dir) {
+    return false;
+  }
+  // .
+  if (!dir_add(dir, ".", sector, true)) {
+    dir_close(dir);
+    return false;
+  }
+
+  // .. (points to itself atm, as root)
+  if (!dir_add(dir, "..", sector, true)) {
+    dir_close(dir);
+    return false;
+  }
+
+  return true;
 }
 
 /* Opens and returns the directory for the given INODE, of which
@@ -112,7 +133,7 @@ bool dir_lookup(const struct dir* dir, const char* name, struct inode** inode) {
    Returns true if successful, false on failure.
    Fails if NAME is invalid (i.e. too long) or a disk or memory
    error occurs. */
-bool dir_add(struct dir* dir, const char* name, block_sector_t inode_sector) {
+bool dir_add(struct dir* dir, const char* name, block_sector_t inode_sector, bool is_dir) {
   struct dir_entry e;
   off_t ofs;
   bool success = false;
@@ -198,4 +219,136 @@ bool dir_readdir(struct dir* dir, char name[NAME_MAX + 1]) {
     }
   }
   return false;
+}
+
+/* Extracts a file name part from *SRCP into PART, and updates *SRCP so that the
+   next call will return the next file name part. Returns 1 if successful, 0 at
+   end of string, -1 for a too-long file name part. */
+int get_next_part(char part[NAME_MAX + 1], const char** srcp) {
+  const char* src = *srcp;
+  char* dst = part;
+
+  /* Skip leading slashes.  If it's all slashes, we're done. */
+  while (*src == '/')
+    src++;
+  if (*src == '\0')
+    return 0;
+
+  /* Copy up to NAME_MAX character from SRC to DST.  Add null terminator. */
+  while (*src != '/' && *src != '\0') {
+    if (dst < part + NAME_MAX)
+      *dst++ = *src;
+    else
+      return -1;
+    src++;
+  }
+  *dst = '\0';
+
+  /* Advance source pointer. */
+  *srcp = src;
+  return 1;
+}
+
+/*helper function to get inode given a path string. Handles 
+nested paths here*/
+struct inode* path_to_inode(const char* path) {
+  struct dir* dir;
+  struct inode* inode = NULL;
+  char part[NAME_MAX + 1];
+  bool success = false;
+
+  if (path == NULL || strlen(path) == 0) {
+    return NULL;
+  }
+
+  // Determine if the path is absolute or relative
+  if (path[0] == '/') {
+    dir = dir_open_root();
+  } else {
+    dir = dir_reopen(thread_current()->cwd);
+  }
+
+  if (dir == NULL) {
+    return NULL;
+  }
+
+  const char* next_part = path;
+
+  // Traverse the path part by part
+  while (get_next_part(part, &next_part) == 1) {
+
+    // Check if the directory has the next part
+    if (!dir_lookup(dir, part, &inode)) {
+      dir_close(dir);
+      return NULL;
+    }
+
+    // if we aren't at the end
+    if (*next_part != '\0') {
+
+      // and it's a file, that's an issue
+      if (!inode_is_dir(inode)) {
+        inode_close(inode);
+        dir_close(dir);
+        return NULL;
+      }
+
+      // otherwise it's another subdir, so open it
+      struct dir* next_dir = dir_open(inode);
+      dir_close(dir);
+      dir = next_dir;
+      if (dir == NULL) {
+        inode_close(inode);
+        return NULL;
+      }
+    }
+  }
+
+  // inode should point to the final segment now
+  if (dir != NULL) {
+    dir_close(dir);
+  }
+
+  return inode;
+}
+
+struct dir* path_to_dir(const char* path) {
+  struct dir* dir = NULL;
+  struct inode* inode = NULL;
+
+  if (path == NULL || strlen(path) == 0)
+    return NULL;
+
+  if (path[0] == '/') {
+    dir = dir_open_root();
+  } else {
+    dir = dir_reopen(thread_current()->cwd);
+  }
+
+  if (dir == NULL)
+    return NULL;
+
+  char part[NAME_MAX + 1];
+  const char* next_part = path;
+  struct dir* parent_dir = dir;
+
+  while (get_next_part(part, &next_part) == 1) {
+    if (*next_part == '\0') {
+
+      return parent_dir;
+    }
+
+    if (!dir_lookup(dir, part, &inode) || !inode_is_dir(inode)) {
+      dir_close(parent_dir);
+      if (inode != NULL)
+        inode_close(inode);
+      return NULL;
+    }
+
+    dir_close(parent_dir);
+    parent_dir = dir_open(inode);
+    inode_close(inode);
+  }
+
+  return parent_dir;
 }

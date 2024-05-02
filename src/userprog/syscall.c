@@ -9,7 +9,11 @@
 #include "userprog/pagedir.h"
 #include "threads/vaddr.h"
 #include "filesys/filesys.h"
+#include "filesys/directory.h"
+#include "filesys/inode.h"
 
+#include <string.h>
+#include <stdlib.h>
 // Global syscall lock
 struct lock syscall_lock;
 
@@ -90,6 +94,101 @@ static size_t syscall_validate_buffer(void* buffer, size_t size) {
 int generate_fid() {
   static int cur_fid = 3;
   return ++cur_fid;
+}
+
+// static bool sys_mkdir(char *dir_path) {
+//     char *path_copy;
+//     struct dir *dir;
+//     bool success = false;
+
+//     path_copy = malloc(strlen(dir_path) + 1);
+//     if (path_copy == NULL) return false;
+//     strlcpy(path_copy, dir_path, strlen(dir_path)+1);
+
+//     const char *next = path_copy;
+//     char part[NAME_MAX + 1];
+//     struct inode *inode = NULL;
+
+//     dir = (path_copy[0] == '/') ? dir_open_root() : thread_current()->cwd;
+
+//     while (get_next_part(part, &next) == 1) {
+//         if (!dir_lookup(dir,part, &inode)) {
+//             if (*next == '\0') { // This is the last part
+//                 block_sector_t inode_sector = 0;
+//                 if (free_map_allocate(1, &inode_sector)) {
+//                     dir_create(inode_sector, 16);
+//                     if (!dir_add(dir, part, inode_sector, true)) {
+//                         free_map_release(inode_sector, 1);
+//                         break;
+//                     }
+//                     success = true;
+//                 }
+//                 break;
+//             } else {
+//                 break; // Part of path does not exist and is not the last part
+//             }
+//         } else if (!inode_is_dir(inode)) {
+//             inode_close(inode);
+//             break; // Found a file where a directory was expected
+//         } else { // Step into the next directory
+//             struct dir *next_dir = dir_open(inode);
+//             dir_close(dir);
+//             dir = next_dir;
+//         }
+
+//     }
+
+//     dir_close(dir);
+//     free(path_copy);
+//     return success;
+// }
+
+static bool sys_mkdir(const char* dir_path) {
+  char* path_copy = malloc(strlen(dir_path) + 1);
+  if (path_copy == NULL)
+    return false;
+  strlcpy(path_copy, dir_path, strlen(dir_path) + 1);
+
+  char part[NAME_MAX + 1];
+  struct dir* dir = (path_copy[0] == '/') ? dir_open_root() : dir_reopen(thread_current()->cwd);
+  if (dir == NULL) {
+    free(path_copy);
+    return false;
+  }
+
+  const char* next = path_copy;
+  struct inode* inode = NULL;
+  bool success = false;
+
+  while (get_next_part(part, &next) == 1) {
+    if (dir_lookup(dir, part, &inode)) {
+      if (*next == '\0' || !inode_is_dir(inode)) {
+        inode_close(inode);
+        break;
+      }
+      struct dir* next_dir = dir_open(inode);
+      inode_close(inode); // Close old inode after opening dir
+      dir_close(dir);     // Close current directory before moving to the next
+      dir = next_dir;
+    } else {
+      if (*next == '\0') { // This is the last part
+        block_sector_t inode_sector = 0;
+        if (free_map_allocate(1, &inode_sector) && dir_create(inode_sector, 16)) {
+          success = dir_add(dir, part, inode_sector, true);
+          if (!success) {
+            free_map_release(inode_sector, 1);
+          }
+        }
+        break;
+      } else {
+        break; // Part of path does not exist and is not the last part
+      }
+    }
+  }
+
+  dir_close(dir);
+  free(path_copy);
+  return success;
 }
 
 static void syscall_handler(struct intr_frame* f UNUSED) {
@@ -543,5 +642,34 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     }
 
     f->eax = user_sema_up(args[1]);
+  }
+
+  else if (args[0] == SYS_CHDIR) {
+    if (!syscall_validate_str(args + 1)) {
+      f->eax = false;
+      return;
+    }
+
+    struct dir* new_dir = path_to_inode(args[1]);
+
+    if (!new_dir) {
+      return NULL;
+    }
+
+    thread_current()->cwd = new_dir;
+
+    f->eax = true;
+    return;
+  }
+
+  else if (args[0] == SYS_MKDIR) {
+
+    if (!syscall_validate_str(args + 1)) {
+      f->eax = false;
+      return;
+    }
+
+    f->eax = sys_mkdir(args[1]);
+    return;
   }
 }

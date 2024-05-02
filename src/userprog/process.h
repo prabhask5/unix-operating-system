@@ -54,7 +54,8 @@ struct process {
   char process_name[16]; /* Name of the main thread */
   struct file* spawn_file;
   struct thread* main_thread; /* Pointer to main thread */
-  struct list fdt;            /* List for the file descriptor table */
+
+  struct list fdt; /* List for the file descriptor table */
   struct shared_data*
       exit_code_data; /* Contains current processes exit information (shared with parent pcb in children_exit_code_data) */
   struct list children_exit_code_data; /* List of process_exit_code_t */
