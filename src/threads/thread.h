@@ -108,6 +108,8 @@ struct thread {
   struct process* pcb; /* Process control block if this thread is a userprog */
 #endif
 
+  struct dir* cwd;
+
   /* Owned by thread.c. */
   unsigned magic; /* Detects stack overflow. */
 };

@@ -14,32 +14,12 @@
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk {
-  unsigned magic; /* Magic number. */
-  off_t length;   /* File size in bytes. */
-  block_sector_t direct_pointers[120];
-  block_sector_t indirect_pointers[3];
-  block_sector_t doubly_indirect_pointers[3];
+  block_sector_t start; /* First data sector. */
+  off_t length;         /* File size in bytes. */
+  unsigned magic;       /* Magic number. */
+  bool is_dir;
+  uint32_t unused[124]; /* Not used. Changed to 124 after adding is_dir*/
 };
-
-struct indirect_block {
-  block_sector_t children[128];
-};
-
-struct cache_block {
-  block_sector_t sector;
-  uint8_t* data; // buffer of size BLOCK_SECTOR_SIZE
-  bool is_dirty;
-  bool is_accessed;
-  bool is_valid;
-  struct lock block_lock;
-};
-
-static struct cache_block* cache[64];
-static size_t cache_size;
-static struct lock cache_lock;
-static size_t clock_arm;
-static size_t cache_hit_count;
-static size_t cache_miss_count;
 
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
@@ -544,11 +524,22 @@ bool inode_create(block_sector_t sector, off_t length, bool is_dir) {
       return false;
     block_read(fs_device, sector, disk_inode);
     disk_inode->length = length;
-    smart_block_write(sector, disk_inode);
-  }
+    disk_inode->magic = INODE_MAGIC;
+    disk_inode->is_dir = is_dir;
+    if (free_map_allocate(sectors, &disk_inode->start)) {
+      block_write(fs_device, sector, disk_inode);
+      if (sectors > 0) {
+        static char zeros[BLOCK_SECTOR_SIZE];
+        size_t i;
 
-  free(disk_inode);
-  return true;
+        for (i = 0; i < sectors; i++)
+          block_write(fs_device, disk_inode->start + i, zeros);
+      }
+      success = true;
+    }
+    free(disk_inode);
+  }
+  return success;
 }
 
 /* Reads an inode from SECTOR
@@ -887,163 +878,10 @@ void inode_allow_write(struct inode* inode) {
 }
 
 /* Returns the length, in bytes, of INODE's data. */
-off_t inode_length(const struct inode* inode) {
-  struct inode_disk* disk_node = malloc(BLOCK_SECTOR_SIZE);
-  if (disk_node == NULL)
-    return -1;
+off_t inode_length(const struct inode* inode) { return inode->data.length; }
 
-  block_read(fs_device, inode->sector, (void*)disk_node);
-  off_t ret = disk_node->length;
-  free(disk_node);
-
-  return ret;
+/* Checks if the inode is a directory */
+bool inode_is_dir(const struct inode* inode) {
+  ASSERT(inode != NULL);
+  return inode->data.is_dir;
 }
-
-void close_cache() {
-  lock_acquire(&cache_lock);
-
-  for (int i = 0; i < 64; i++) {
-    struct cache_block* curr_block = cache[i];
-    if (curr_block->is_valid) {
-      if (curr_block->is_dirty) {
-        block_write(fs_device, curr_block->sector, curr_block->data);
-      }
-      free(curr_block->data);
-    }
-    free(curr_block);
-  }
-
-  lock_release(&cache_lock);
-}
-
-void reset_cache() {
-  close_cache();
-
-  // recreate the buffer cache
-  clock_arm = 0;
-  cache_size = 0;
-  cache_hit_count = 0;
-  cache_miss_count = 0;
-
-  for (int i = 0; i < 64; i++) {
-    cache[i] = malloc(sizeof(struct cache_block));
-    if (cache[i] == NULL)
-      return;
-
-    lock_init(&cache[i]->block_lock); // not sure if i re-init this
-    cache[i]->is_dirty = false;
-    cache[i]->is_accessed = false;
-    cache[i]->is_valid = false;
-  }
-}
-
-int evict_block() {
-  lock_acquire(&cache_lock);
-
-  struct cache_block* rm_block = NULL;
-  while (rm_block == NULL) {
-    struct cache_block* curr_block = cache[clock_arm];
-
-    if (curr_block->is_accessed) {
-      rm_block = curr_block;
-    } else
-      curr_block->is_accessed = true;
-
-    clock_arm = (clock_arm + 1) % 64;
-  }
-
-  lock_release(&cache_lock);
-
-  lock_acquire(&rm_block->block_lock);
-  if (rm_block->is_dirty) {
-    block_write(fs_device, rm_block->sector, rm_block->data);
-  }
-
-  rm_block->is_valid = false;
-  free(rm_block->data);
-  lock_release(&rm_block->block_lock);
-
-  return (clock_arm - 1) % 64;
-}
-
-struct cache_block* fetch_block(block_sector_t sector) {
-  struct cache_block* block = NULL;
-  bool found = 0;
-
-  lock_acquire(&cache_lock);
-  for (int i = 0; i < cache_size; i++) {
-    struct cache_block* curr = cache[i];
-    if (curr->is_valid && curr->sector == sector) {
-      block = curr;
-      found = 1;
-      break;
-    }
-  }
-  lock_release(&cache_lock);
-
-  if (found) {
-    cache_hit_count++;
-  } else {
-    cache_miss_count++;
-  }
-
-  if (block == NULL) {
-    uint8_t* block_data = malloc(BLOCK_SECTOR_SIZE);
-    if (block_data == NULL)
-      return NULL;
-
-    if (cache_size == 64) {
-      int pos = evict_block();
-      block = cache[pos];
-    } else {
-      block = cache[cache_size];
-      cache_size++;
-    }
-
-    lock_acquire(&block->block_lock);
-    block->is_valid = true;
-    block->sector = sector;
-    block->is_dirty = false;
-    block->is_accessed = false;
-    block->data = block_data;
-    block_read(fs_device, sector, block->data);
-    lock_release(&block->block_lock);
-  }
-
-  return block;
-}
-
-void smart_block_write(block_sector_t sector, void* buffer) {
-  smart_write(sector, buffer, 0, BLOCK_SECTOR_SIZE);
-}
-
-void smart_block_read(block_sector_t sector, void* buffer) {
-  smart_read(sector, buffer, 0, BLOCK_SECTOR_SIZE);
-}
-
-void smart_write(block_sector_t sector, void* buffer, size_t offset, size_t bytes_written) {
-  struct cache_block* block = fetch_block(sector);
-  if (block == NULL)
-    return;
-
-  lock_acquire(&block->block_lock);
-  memcpy(block->data + offset, buffer, bytes_written);
-  block->is_dirty = true;
-  block->is_accessed = false;
-  lock_release(&block->block_lock);
-}
-
-void smart_read(block_sector_t sector, void* buffer, size_t offset, size_t bytes_read) {
-  struct cache_block* block = fetch_block(sector);
-  if (block == NULL)
-    return;
-
-  lock_acquire(&block->block_lock);
-  memcpy(buffer, block->data + offset, bytes_read);
-  block->is_accessed = false;
-  lock_release(&block->block_lock);
-}
-
-size_t get_cache_hits() { return cache_hit_count; }
-
-size_t get_cache_misses() { return cache_miss_count; }

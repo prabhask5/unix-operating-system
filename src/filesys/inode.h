@@ -20,15 +20,5 @@ void inode_deny_write(struct inode*);
 void inode_allow_write(struct inode*);
 off_t inode_length(const struct inode*);
 // added for proj 4 below
-bool inode_is_dir(const struct inode* inode);void close_cache(void);
-void reset_cache(void);
-int evict_block(void);
-struct cache_block* fetch_block(block_sector_t);
-void smart_block_write(block_sector_t, void*);
-void smart_block_read(block_sector_t, void*);
-void smart_write(block_sector_t, void*, size_t, size_t);
-void smart_read(block_sector_t, void*, size_t, size_t);
-size_t get_cache_hits(void);
-size_t get_cache_misses(void);
-
+bool inode_is_dir(const struct inode* inode);
 #endif /* filesys/inode.h */

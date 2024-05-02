@@ -9,7 +9,13 @@
 #include "userprog/pagedir.h"
 #include "threads/vaddr.h"
 #include "filesys/filesys.h"
+#include "filesys/directory.h"
 #include "filesys/inode.h"
+
+#include <string.h>
+#include <stdlib.h>
+// Global syscall lock
+struct lock syscall_lock;
 
 static void syscall_handler(struct intr_frame*);
 static bool is_valid_addr(void* addr);
@@ -134,55 +140,53 @@ int generate_fid() {
 //     return success;
 // }
 
-// static bool sys_mkdir(const char* dir_path) {
-//   char* path_copy = malloc(strlen(dir_path) + 1);
-//   if (path_copy == NULL)
-//     return false;
-//   strlcpy(path_copy, dir_path, strlen(dir_path) + 1);
+static bool sys_mkdir(const char* dir_path) {
+  char* path_copy = malloc(strlen(dir_path) + 1);
+  if (path_copy == NULL)
+    return false;
+  strlcpy(path_copy, dir_path, strlen(dir_path) + 1);
 
-//   char part[NAME_MAX + 1];
-//   // struct dir* dir = (path_copy[0] == '/') ? dir_open_root() : dir_reopen(thread_current()->cwd);
-//   struct dir* dir = dir_reopen(thread_current()->cwd);
-//   ASSERT(inode_is_dir(dir->inode)== true);
-//   if (dir == NULL) {
-//     free(path_copy);
-//     return false;
-//   }
+  char part[NAME_MAX + 1];
+  struct dir* dir = (path_copy[0] == '/') ? dir_open_root() : dir_reopen(thread_current()->cwd);
+  if (dir == NULL) {
+    free(path_copy);
+    return false;
+  }
 
-//   const char* next = path_copy;
-//   struct inode* inode = NULL;
-//   bool success = false;
+  const char* next = path_copy;
+  struct inode* inode = NULL;
+  bool success = false;
 
-//   while (get_next_part(part, &next) == 1) {
-//     if (dir_lookup(dir, part, &inode)) {
-//       if (*next == '\0' || !inode_is_dir(inode)) {
-//         inode_close(inode);
-//         break;
-//       }
-//       struct dir* next_dir = dir_open(inode);
-//       inode_close(inode); // Close old inode after opening dir
-//       dir_close(dir);     // Close current directory before moving to the next
-//       dir = next_dir;
-//     } else {
-//       if (*next == '\0') { // This is the last part
-//         block_sector_t inode_sector = 0;
-//         if (free_map_allocate(1, &inode_sector) && dir_create(inode_sector, 16)) {
-//           success = dir_add(dir, part, inode_sector, true);
-//           if (!success) {
-//             free_map_release(inode_sector, 1);
-//           }
-//         }
-//         break;
-//       } else {
-//         break; // Part of path does not exist and is not the last part
-//       }
-//     }
-//   }
+  while (get_next_part(part, &next) == 1) {
+    if (dir_lookup(dir, part, &inode)) {
+      if (*next == '\0' || !inode_is_dir(inode)) {
+        inode_close(inode);
+        break;
+      }
+      struct dir* next_dir = dir_open(inode);
+      inode_close(inode); // Close old inode after opening dir
+      dir_close(dir);     // Close current directory before moving to the next
+      dir = next_dir;
+    } else {
+      if (*next == '\0') { // This is the last part
+        block_sector_t inode_sector = 0;
+        if (free_map_allocate(1, &inode_sector) && dir_create(inode_sector, 16)) {
+          success = dir_add(dir, part, inode_sector, true);
+          if (!success) {
+            free_map_release(inode_sector, 1);
+          }
+        }
+        break;
+      } else {
+        break; // Part of path does not exist and is not the last part
+      }
+    }
+  }
 
-//   dir_close(dir);
-//   free(path_copy);
-//   return success;
-// }
+  dir_close(dir);
+  free(path_copy);
+  return success;
+}
 
 static void syscall_handler(struct intr_frame* f UNUSED) {
   uint32_t* args = ((uint32_t*)f->esp);
@@ -533,49 +537,32 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     f->eax = sys_sum_to_e(args[1]);
   }
 
-  else if (args[0] == SYS_RESET_CACHE) {
-    reset_cache();
-  }
-
-  else if (args[0] == SYS_GET_CACHE_INFO) {
-    switch (args[1]) {
-      case 0:
-        /* cache hits */
-        f->eax = get_cache_hits();
-        break;
-      case 1:
-        /* cache miss */
-        f->eax = get_cache_misses();
-        break;
-      case 2:
-        /* read count */
-        f->eax = get_read_count(fs_device);
-        break;
-      case 3:
-        /* write count */
-        f->eax = get_write_count(fs_device);
-        break;
-      default:
-        break;
-    }
-  }
-  
-   else if (args[0] == SYS_INUMBER) {
-    if (!syscall_validate_word(args + 1)) {
-      process_exit(-1);
+  else if (args[0] == SYS_CHDIR) {
+    if (!syscall_validate_str(args + 1)) {
+      f->eax = false;
       return;
     }
 
-    struct list* fdt = &thread_current()->pcb->fdt;
+    struct dir* new_dir = path_to_inode(args[1]);
 
-    for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
-      struct file_descriptor_elem* fd = list_entry(e, struct file_descriptor_elem, elem);
-      if (fd->id == args[1]) {
-        f->eax = inode_get_inumber(fd->f->inode);
-        return
-      }
+    if (!new_dir) {
+      return NULL;
     }
 
-    f->eax = -1;
+    thread_current()->cwd = new_dir;
+
+    f->eax = true;
     return;
+  }
+
+  else if (args[0] == SYS_MKDIR) {
+
+    if (!syscall_validate_str(args + 1)) {
+      f->eax = false;
+      return;
+    }
+
+    f->eax = sys_mkdir(args[1]);
+    return;
+  }
 }

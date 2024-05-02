@@ -7,7 +7,6 @@
 #include "filesys/inode.h"
 #include "filesys/directory.h"
 #include "threads/thread.h"
-#include "userprog/process.h"
 /* Partition that contains the file system. */
 struct block* fs_device;
 
@@ -42,24 +41,21 @@ void filesys_done(void) {
    or if internal memory allocation fails. */
 bool filesys_create(const char* name, off_t initial_size) {
   block_sector_t inode_sector = 0;
-  struct dir* dir = NULL;
-  char final_name[NAME_MAX + 1];
+  struct dir* dir = dir_open_root();
 
-  if (!parse_path(name, &dir, final_name)) {
-    return false;
+  // a/b
+
+  char* slash_pos = strrchr(name, '/');
+  if (slash_pos != NULL) {
+    dir = path_to_dir(name);
+    name = slash_pos + 1;
+  } else if (thread_current()->cwd != NULL) {
+    dir = dir_reopen(thread_current()->cwd);
   }
 
-  // char* slash_pos = strrchr(name, '/');
-  // if (slash_pos != NULL) {
-  //   dir = path_to_dir(name);
-  //   name = slash_pos + 1;
-  // } else if (thread_current()->cwd != NULL) {
-  //   dir = dir_reopen(thread_current()->cwd);
-  // }
-
-  bool success = (dir != NULL && free_map_allocate(1, &inode_sector) &&
-                  inode_create(inode_sector, initial_size, false) &&
-                  dir_add(dir, final_name, inode_sector, false));
+  bool success =
+      (dir != NULL && free_map_allocate(1, &inode_sector) &&
+       inode_create(inode_sector, initial_size, false) && dir_add(dir, name, inode_sector, false));
   if (!success && inode_sector != 0)
     free_map_release(inode_sector, 1);
   dir_close(dir);
@@ -73,22 +69,12 @@ bool filesys_create(const char* name, off_t initial_size) {
    Fails if no file named NAME exists,
    or if an internal memory allocation fails. */
 struct file* filesys_open(const char* name) {
+  // struct dir* dir = dir_open_root();
+  struct dir* dir = thread_current()->cwd;
 
-  // struct dir* dir;
-
-  // if (!thread_current()->pcb->cwd) {
-  //   dir = dir_open_root();
-  // } else {
-  //   dir = dir_reopen(thread_current()->pcb->cwd);
-  // }
-
-  struct dir* dir = NULL;
-  char final_name[NAME_MAX + 1];
-
-  if (!parse_path(name, &dir, final_name)) {
-    return false;
+  if (!dir) {
+    dir = dir_open_root();
   }
-
   struct inode* inode = NULL;
 
   if (dir != NULL)
