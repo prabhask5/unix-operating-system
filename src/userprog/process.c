@@ -224,6 +224,15 @@ static void start_process(void** args) {
     t->pcb->cwd = dir_open_root();
   }
 
+  // CWD setup
+
+  // parent's CWD, else root
+  if (parent_pcb->cwd != NULL) {
+    t->pcb->cwd = dir_reopen(parent_pcb->cwd);
+  } else {
+    t->pcb->cwd = dir_open_root();
+  }
+
   /* Initialize interrupt frame and load executable. */
   if (success) {
     memset(&if_, 0, sizeof if_);
