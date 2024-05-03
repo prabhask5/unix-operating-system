@@ -73,8 +73,13 @@ bool filesys_create(const char* name, off_t initial_size, bool is_dir) {
    Fails if no file named NAME exists,
    or if an internal memory allocation fails. */
 struct file* filesys_open(const char* name) {
-  // struct dir* dir = dir_open_root();
-  struct dir* dir = dir_reopen(thread_current()->pcb->cwd);
+  struct dir* dir;
+
+  if (!thread_current()->pcb->cwd) {
+    dir = dir_open_root();
+  } else {
+    dir = dir_reopen(thread_current()->pcb->cwd);
+  }
   struct inode* inode = NULL;
 
   if (dir != NULL)
