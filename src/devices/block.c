@@ -170,3 +170,7 @@ static struct block* list_elem_to_block(struct list_elem* list_elem) {
   return (list_elem != list_end(&all_blocks) ? list_entry(list_elem, struct block, list_elem)
                                              : NULL);
 }
+
+unsigned long long get_read_count(struct block* b) { return b->read_cnt; }
+
+unsigned long long get_write_count(struct block* b) { return b->write_cnt; }

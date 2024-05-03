@@ -157,4 +157,13 @@ void sema_up(sema_t* sema) {
     exit(1);
 }
 
+void reset_cache() {
+  bool success = syscall0(SYS_RESET_CACHE);
+  if (!success) {
+    exit(1);
+  }
+}
+
+int get_cache_info(int valID) { return syscall1(SYS_GET_CACHE_INFO, valID); }
+
 tid_t get_tid(void) { return syscall0(SYS_GET_TID); }

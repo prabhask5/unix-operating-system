@@ -9,12 +9,7 @@
 #include "userprog/pagedir.h"
 #include "threads/vaddr.h"
 #include "filesys/filesys.h"
-#include "filesys/directory.h"
 #include "filesys/inode.h"
-#include <string.h>
-#include <stdlib.h>
-// Global syscall lock
-struct lock syscall_lock;
 
 static void syscall_handler(struct intr_frame*);
 static bool is_valid_addr(void* addr);
@@ -23,10 +18,7 @@ static bool syscall_validate_ptr(void** ptr);
 static bool syscall_validate_str(char* str_ptr);
 static size_t syscall_validate_buffer(void* buffer, size_t size);
 
-void syscall_init(void) {
-  lock_init(&syscall_lock);
-  intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
-}
+void syscall_init(void) { intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall"); }
 
 /*
   Validates the address for one byte of memory
@@ -293,14 +285,12 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     int size = syscall_validate_buffer(args[2], args[3]);
 
-    lock_acquire(&syscall_lock);
     uint32_t bytes_written = 0;
 
     if (args[1] == STDIN_FILENO) {
       // TODO breakup large buffers
 
       f->eax = -1;
-      lock_release(&syscall_lock);
       return;
 
     } else if (args[1] == STDOUT_FILENO) {
@@ -323,7 +313,6 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
       if (fd == NULL) {
         f->eax = -1;
-        lock_release(&syscall_lock);
         return;
       }
 
@@ -332,13 +321,11 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     if (bytes_written == -1) {
       f->eax = -1;
-      lock_release(&syscall_lock);
       return;
     }
 
     // Return number of bytes written
     f->eax = bytes_written;
-    lock_release(&syscall_lock);
     return;
 
   }
@@ -374,28 +361,21 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       process_exit(-1);
       return;
     }
-    lock_acquire(&syscall_lock);
     struct file* file = filesys_open((char*)args[1]);
 
     if (file == NULL) {
+
       f->eax = -1;
-      lock_release(&syscall_lock);
       return;
     }
 
     struct file_descriptor_elem* fd = malloc(sizeof(struct file_descriptor_elem));
-    if (fd == NULL) {
-      f->eax = -1;
-      lock_release(&syscall_lock);
-      return;
-    }
 
     fd->f = file;
     fd->id = generate_fid();
 
     list_push_back(&thread_current()->pcb->fdt, &fd->elem);
 
-    lock_release(&syscall_lock);
     f->eax = fd->id;
     return;
 
@@ -408,8 +388,6 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     int32_t len;
 
-    lock_acquire(&syscall_lock);
-
     struct list* fdt = &thread_current()->pcb->fdt;
     struct file_descriptor_elem* fd;
 
@@ -420,8 +398,6 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
         len = file_length(fd->f);
       }
     }
-
-    lock_release(&syscall_lock);
 
     f->eax = len;
     return;
@@ -437,8 +413,6 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     int size = syscall_validate_buffer(args[2], args[3]);
 
-    lock_acquire(&syscall_lock);
-
     uint32_t bytes_read = 0;
     struct list* fdt = &thread_current()->pcb->fdt;
 
@@ -453,7 +427,6 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     if (fd == NULL) {
       f->eax = -1;
-      lock_release(&syscall_lock);
       return;
     }
 
@@ -467,13 +440,11 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     if (bytes_read == -1) {
       f->eax = -1;
-      lock_release(&syscall_lock);
       return;
     }
 
     // Return number of bytes written
     f->eax = bytes_read;
-    lock_release(&syscall_lock);
     return;
 
   } else if (args[0] == SYS_SEEK) {
@@ -482,8 +453,6 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       return;
     }
 
-    lock_acquire(&syscall_lock);
-
     struct list* fdt = &thread_current()->pcb->fdt;
 
     struct file_descriptor_elem* fd = NULL;
@@ -495,13 +464,10 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     if (fd == NULL) {
       f->eax = -1;
-      lock_release(&syscall_lock);
       return;
     }
 
     file_seek(fd->f, args[2]);
-
-    lock_release(&syscall_lock);
 
     return;
   } else if (args[0] == SYS_TELL) {
@@ -510,8 +476,6 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       return;
     }
 
-    lock_acquire(&syscall_lock);
-
     struct list* fdt = &thread_current()->pcb->fdt;
     struct file_descriptor_elem* fd = NULL;
     for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
@@ -522,13 +486,10 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     if (fd == NULL) {
       f->eax = -1;
-      lock_release(&syscall_lock);
       return;
     }
 
     int offset = file_tell(fd->f);
-
-    lock_release(&syscall_lock);
 
     f->eax = offset;
     return;
@@ -538,8 +499,6 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       process_exit(-1);
       return;
     }
-
-    lock_acquire(&syscall_lock);
 
     struct list* fdt = &thread_current()->pcb->fdt;
     struct file_descriptor_elem* fd = NULL;
@@ -556,7 +515,6 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     if (fd == NULL) {
       f->eax = -1;
-      lock_release(&syscall_lock);
       return;
     }
 
@@ -564,7 +522,6 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     file_close(fd->f);
     free(fd);
 
-    lock_release(&syscall_lock);
     return;
   }
 
@@ -574,100 +531,32 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       return;
     }
     f->eax = sys_sum_to_e(args[1]);
-  } // user pthread syscalls
-  else if (args[0] == SYS_PT_CREATE) {
-    if (!syscall_validate_word(args + 1) || !syscall_validate_word(args + 2) ||
-        !syscall_validate_word(args + 3)) {
-      process_exit(-1);
-      return;
-    }
-
-    f->eax = pthread_execute((stub_fun)args[1], (pthread_fun)args[2], (void*)args[3]);
-  } else if (args[0] == SYS_PT_EXIT) {
-    if (thread_current()->pcb && is_main_thread(thread_current(), thread_current()->pcb)) {
-      pthread_exit_main();
-    } else {
-      pthread_exit();
-    }
-  } else if (args[0] == SYS_PT_JOIN) {
-    if (!syscall_validate_word(args + 1)) {
-      process_exit(-1);
-      return;
-    }
-
-    f->eax = pthread_join((tid_t)args[1]);
-  } else if (args[0] == SYS_GET_TID) {
-    f->eax = thread_tid();
   }
 
-  /* User synchronization syscalls */
-  else if (args[0] == SYS_LOCK_INIT) {
-    if (!syscall_validate_word(args + 1)) {
-      process_exit(-1);
-      return;
-    }
-
-    f->eax = user_lock_init(args[1]);
-  } else if (args[0] == SYS_LOCK_ACQUIRE) {
-    if (!syscall_validate_word(args + 1)) {
-      process_exit(-1);
-      return;
-    }
-
-    f->eax = user_lock_acquire(args[1]);
-  } else if (args[0] == SYS_LOCK_RELEASE) {
-    if (!syscall_validate_word(args + 1)) {
-      process_exit(-1);
-      return;
-    }
-
-    f->eax = user_lock_release(args[1]);
-  } else if (args[0] == SYS_SEMA_INIT) {
-    if (!syscall_validate_word(args + 1) || !syscall_validate_word(args + 2)) {
-      process_exit(-1);
-      return;
-    }
-
-    f->eax = user_sema_init(args[1], args[2]);
-  } else if (args[0] == SYS_SEMA_DOWN) {
-    if (!syscall_validate_word(args + 1)) {
-      process_exit(-1);
-      return;
-    }
-
-    f->eax = user_sema_down(args[1]);
-  } else if (args[0] == SYS_SEMA_UP) {
-    if (!syscall_validate_word(args + 1)) {
-      process_exit(-1);
-      return;
-    }
-
-    f->eax = user_sema_up(args[1]);
+  else if (args[0] == SYS_RESET_CACHE) {
+    reset_cache();
   }
 
-  else if (args[0] == SYS_CHDIR) {
-    if (!syscall_validate_str(args + 1)) {
-      f->eax = false;
-      return;
+  else if (args[0] == SYS_GET_CACHE_INFO) {
+    switch (args[1]) {
+      case 0:
+        /* cache hits */
+        f->eax = get_cache_hits();
+        break;
+      case 1:
+        /* cache miss */
+        f->eax = get_cache_misses();
+        break;
+      case 2:
+        /* read count */
+        f->eax = get_read_count(fs_device);
+        break;
+      case 3:
+        /* write count */
+        f->eax = get_write_count(fs_device);
+        break;
+      default:
+        break;
     }
-
-    if (!filesys_chdir(args[1])) {
-      f->eax = false;
-      return;
-    }
-
-    f->eax = true;
-    return;
-  }
-
-  else if (args[0] == SYS_MKDIR) {
-
-    if (!syscall_validate_str(args + 1)) {
-      f->eax = false;
-      return;
-    }
-
-    f->eax = filesys_mkdir(args[1], 1024);
-    return;
   }
 }

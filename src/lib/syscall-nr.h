@@ -30,6 +30,9 @@ enum {
   SYS_SEMA_UP,      /* Ups a semaphore */
   SYS_GET_TID,      /* Gets TID of the current thread */
 
+  SYS_RESET_CACHE,    /* Resets the buffer cache */
+  SYS_GET_CACHE_INFO, /* Gets read count, write count, hit rate, miss rate */
+
   /* Project 3 and optionally project 4. */
   SYS_MMAP,   /* Map a file into memory. */
   SYS_MUNMAP, /* Remove a memory mapping. */

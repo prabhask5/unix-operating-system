@@ -55,6 +55,9 @@ void block_write(struct block*, block_sector_t, const void*);
 const char* block_name(struct block*);
 enum block_type block_type(struct block*);
 
+unsigned long long get_read_count(struct block*);
+unsigned long long get_write_count(struct block*);
+
 /* Statistics. */
 void block_print_stats(void);
 
@@ -67,5 +70,4 @@ struct block_operations {
 
 struct block* block_register(const char* name, enum block_type, const char* extra_info,
                              block_sector_t size, const struct block_operations*, void* aux);
-
 #endif /* devices/block.h */
