@@ -11,8 +11,8 @@
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
 #define LAST_DIRECT_POINTER_INDEX 119
-#define LAST_INDIRECT_POINTER_INDEX 1
-#define LAST_DOUBLY_INDIRECT_POINTER_INDEX 2
+#define LAST_INDIRECT_POINTER_INDEX 2
+#define LAST_DOUBLY_INDIRECT_POINTER_INDEX 1
 #define LAST_CHILD_BLOCK_POINTER_INDEX 127
 
 /* On-disk inode.
@@ -22,8 +22,30 @@ struct inode_disk {
   off_t length;         /* File size in bytes. */
   unsigned magic;       /* Magic number. */
   bool is_dir;
-  uint32_t unused[124]; /* Not used. Changed to 124 after adding is_dir*/
+  block_sector_t direct_pointers[LAST_DIRECT_POINTER_INDEX + 1];
+  block_sector_t indirect_pointers[LAST_INDIRECT_POINTER_INDEX + 1];
+  block_sector_t doubly_indirect_pointers[LAST_DOUBLY_INDIRECT_POINTER_INDEX + 1];
 };
+
+struct indirect_block {
+  block_sector_t children[128];
+};
+
+struct cache_block {
+  block_sector_t sector;
+  uint8_t* data; // buffer of size BLOCK_SECTOR_SIZE
+  bool is_dirty;
+  bool is_accessed;
+  bool is_valid;
+  struct lock block_lock;
+};
+
+static struct cache_block* cache[64];
+static size_t cache_size;
+static struct lock cache_lock;
+static size_t clock_arm;
+static size_t cache_hit_count;
+static size_t cache_miss_count;
 
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
@@ -632,7 +654,7 @@ void inode_close(struct inode* inode) {
       int indirect_block_num = 0;
       int doubly_indirect_block_num = 0;
 
-      while (bytes_remaining > 0 && direct_block_num < 120) {
+      while (bytes_remaining > 0 && direct_block_num <= LAST_DIRECT_POINTER_INDEX) {
         free_map_release(disk_node->direct_pointers[direct_block_num], 1);
 
         if (bytes_remaining >= BLOCK_SECTOR_SIZE)
@@ -642,7 +664,7 @@ void inode_close(struct inode* inode) {
         direct_block_num++;
       }
 
-      while (bytes_remaining > 0 && indirect_block_num < 3) {
+      while (bytes_remaining > 0 && indirect_block_num <= LAST_INDIRECT_POINTER_INDEX) {
         struct indirect_block* indirect_block = malloc(BLOCK_SECTOR_SIZE);
         if (indirect_block == NULL) {
           free(disk_node);
@@ -654,7 +676,7 @@ void inode_close(struct inode* inode) {
                    (void*)indirect_block);
 
         direct_block_num = 0;
-        while (bytes_remaining > 0 && direct_block_num < 128) {
+        while (bytes_remaining > 0 && direct_block_num <= LAST_CHILD_BLOCK_POINTER_INDEX) {
           free_map_release(indirect_block->children[direct_block_num], 1);
 
           if (bytes_remaining >= BLOCK_SECTOR_SIZE)
@@ -669,7 +691,8 @@ void inode_close(struct inode* inode) {
         indirect_block++;
       }
 
-      while (bytes_remaining > 0 && doubly_indirect_block_num < 3) {
+      while (bytes_remaining > 0 &&
+             doubly_indirect_block_num <= LAST_DOUBLY_INDIRECT_POINTER_INDEX) {
         struct indirect_block* doubly_indirect_block = malloc(BLOCK_SECTOR_SIZE);
         if (doubly_indirect_block == NULL) {
           free(disk_node);
@@ -681,7 +704,7 @@ void inode_close(struct inode* inode) {
                    (void*)doubly_indirect_block);
 
         indirect_block_num = 0;
-        while (bytes_remaining > 0 && indirect_block_num < 128) {
+        while (bytes_remaining > 0 && indirect_block_num <= LAST_CHILD_BLOCK_POINTER_INDEX) {
           struct indirect_block* indirect_block = malloc(BLOCK_SECTOR_SIZE);
           if (indirect_block == NULL) {
             free(doubly_indirect_block);
@@ -694,7 +717,7 @@ void inode_close(struct inode* inode) {
                      (void*)indirect_block);
 
           direct_block_num = 0;
-          while (bytes_remaining > 0 && direct_block_num < 128) {
+          while (bytes_remaining > 0 && direct_block_num <= LAST_CHILD_BLOCK_POINTER_INDEX) {
             free_map_release(indirect_block->children[direct_block_num], 1);
 
             if (bytes_remaining >= BLOCK_SECTOR_SIZE)
