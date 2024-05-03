@@ -76,6 +76,10 @@ bool filesys_create(const char* path, off_t initial_size) {
    or if an internal memory allocation fails. */
 struct file* filesys_open(const char* path) {
 
+  if (strcmp(path, "/") == 0) {
+    return file_open(inode_open(ROOT_DIR_SECTOR)); // Assume ROOT_DIR_SECTOR is defined
+  }
+
   struct dir* dir = NULL;
   if (!get_parent_dir(path, &dir)) {
     return false;
@@ -87,6 +91,7 @@ struct file* filesys_open(const char* path) {
   }
 
   struct inode* inode = NULL;
+
   if (!dir_lookup(dir, name, &inode)) {
     dir_close(dir);
     return NULL;
@@ -126,6 +131,14 @@ bool filesys_remove(const char* path) {
     return false;
   }
 
+  //also that it isn't our cwd
+
+  if (dir_is_cwd(inode)) {
+    inode_close(inode);
+    dir_close(parent_dir);
+    return false;
+  }
+
   bool success = dir_remove(parent_dir, name);
   dir_close(parent_dir);
 
@@ -136,7 +149,7 @@ bool filesys_remove(const char* path) {
 static void do_format(void) {
   printf("Formatting file system...");
   free_map_create();
-  if (!dir_create(ROOT_DIR_SECTOR, 16))
+  if (!dir_create(ROOT_DIR_SECTOR, 16, NULL))
     PANIC("root directory creation failed");
   free_map_close();
   printf("done.\n");
@@ -161,7 +174,8 @@ bool filesys_mkdir(const char* path) {
   if (dir_lookup(parent_dir, name, &inode))
     return false;
 
-  bool success = (free_map_allocate(1, &inode_sector) && dir_create(inode_sector, 1024) &&
+  bool success = (free_map_allocate(1, &inode_sector) &&
+                  dir_create(inode_sector, 128, inode_get_inumber(dir_get_inode(parent_dir))) &&
                   dir_add(parent_dir, name, inode_sector, true));
   if (!success && inode_sector != 0)
     free_map_release(inode_sector, 1);
@@ -171,6 +185,10 @@ bool filesys_mkdir(const char* path) {
 }
 
 bool filesys_chdir(const char* name) {
+  if (strcmp(name, "/") == 0) {
+    return file_open(inode_open(ROOT_DIR_SECTOR)); // Assume ROOT_DIR_SECTOR is defined
+  }
+
   struct dir* dir = NULL;
 
   if (!get_dir_from_path(name, &dir)) {

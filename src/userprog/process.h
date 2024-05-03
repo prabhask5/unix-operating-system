@@ -28,6 +28,7 @@ struct file_descriptor_elem {
   struct file* f;
   int id;
   struct list_elem elem;
+  struct dir* dir;
 };
 
 /* Adds a new file description entry */

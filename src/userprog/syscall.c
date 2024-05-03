@@ -92,103 +92,6 @@ int generate_fid() {
   return ++cur_fid;
 }
 
-// static bool sys_mkdir(char *dir_path) {
-//     char *path_copy;
-//     struct dir *dir;
-//     bool success = false;
-
-//     path_copy = malloc(strlen(dir_path) + 1);
-//     if (path_copy == NULL) return false;
-//     strlcpy(path_copy, dir_path, strlen(dir_path)+1);
-
-//     const char *next = path_copy;
-//     char part[NAME_MAX + 1];
-//     struct inode *inode = NULL;
-
-//     dir = (path_copy[0] == '/') ? dir_open_root() : thread_current()->cwd;
-
-//     while (get_next_part(part, &next) == 1) {
-//         if (!dir_lookup(dir,part, &inode)) {
-//             if (*next == '\0') { // This is the last part
-//                 block_sector_t inode_sector = 0;
-//                 if (free_map_allocate(1, &inode_sector)) {
-//                     dir_create(inode_sector, 16);
-//                     if (!dir_add(dir, part, inode_sector, true)) {
-//                         free_map_release(inode_sector, 1);
-//                         break;
-//                     }
-//                     success = true;
-//                 }
-//                 break;
-//             } else {
-//                 break; // Part of path does not exist and is not the last part
-//             }
-//         } else if (!inode_is_dir(inode)) {
-//             inode_close(inode);
-//             break; // Found a file where a directory was expected
-//         } else { // Step into the next directory
-//             struct dir *next_dir = dir_open(inode);
-//             dir_close(dir);
-//             dir = next_dir;
-//         }
-
-//     }
-
-//     dir_close(dir);
-//     free(path_copy);
-//     return success;
-// }
-
-// static bool sys_mkdir(const char* dir_path) {
-//   char* path_copy = malloc(strlen(dir_path) + 1);
-//   if (path_copy == NULL)
-//     return false;
-//   strlcpy(path_copy, dir_path, strlen(dir_path) + 1);
-
-//   char part[NAME_MAX + 1];
-//   // struct dir* dir = (path_copy[0] == '/') ? dir_open_root() : dir_reopen(thread_current()->cwd);
-//   struct dir* dir = dir_reopen(thread_current()->cwd);
-//   ASSERT(inode_is_dir(dir->inode)== true);
-//   if (dir == NULL) {
-//     free(path_copy);
-//     return false;
-//   }
-
-//   const char* next = path_copy;
-//   struct inode* inode = NULL;
-//   bool success = false;
-
-//   while (get_next_part(part, &next) == 1) {
-//     if (dir_lookup(dir, part, &inode)) {
-//       if (*next == '\0' || !inode_is_dir(inode)) {
-//         inode_close(inode);
-//         break;
-//       }
-//       struct dir* next_dir = dir_open(inode);
-//       inode_close(inode); // Close old inode after opening dir
-//       dir_close(dir);     // Close current directory before moving to the next
-//       dir = next_dir;
-//     } else {
-//       if (*next == '\0') { // This is the last part
-//         block_sector_t inode_sector = 0;
-//         if (free_map_allocate(1, &inode_sector) && dir_create(inode_sector, 16)) {
-//           success = dir_add(dir, part, inode_sector, true);
-//           if (!success) {
-//             free_map_release(inode_sector, 1);
-//           }
-//         }
-//         break;
-//       } else {
-//         break; // Part of path does not exist and is not the last part
-//       }
-//     }
-//   }
-
-//   dir_close(dir);
-//   free(path_copy);
-//   return success;
-// }
-
 static void syscall_handler(struct intr_frame* f UNUSED) {
   uint32_t* args = ((uint32_t*)f->esp);
 
@@ -379,6 +282,13 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     fd->f = file;
     fd->id = generate_fid();
 
+    struct inode* inode = file_get_inode(fd->f);
+    if (inode != NULL && inode_is_dir(inode)) {
+      fd->dir = dir_open(inode_reopen(inode));
+    } else {
+      fd->dir = NULL;
+    }
+
     list_push_back(&thread_current()->pcb->fdt, &fd->elem);
 
     f->eax = fd->id;
@@ -430,7 +340,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
         fd = temp_fd;
     }
 
-    if (fd == NULL) {
+    if (fd == NULL || inode_is_dir(file_get_inode(fd->f))) {
       f->eax = -1;
       return;
     }
@@ -632,18 +542,26 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     }
 
     struct inode* inode = file_get_inode(fd->f);
-    if (!inode) {
+    if (!inode || !inode_is_dir(inode)) {
       f->eax = false;
       return;
     }
 
-    if (!inode_is_dir(inode)) {
-      f->eax = false;
-      return;
+    if (fd->dir == NULL) {
+      fd->dir = dir_open(file_get_inode(fd->f));
     }
 
-    f->eax = dir_readdir(fd->f, args[2]);
+    bool found = false;
+    char name[NAME_MAX + 1];
+    while (dir_readdir(fd->dir, name)) {
+      if (strcmp(name, ".") != 0 && strcmp(name, "..") != 0) {
+        strlcpy(args[2], name, NAME_MAX + 1);
+        found = true;
+        break;
+      }
+    }
 
+    f->eax = found;
     return;
   }
 }

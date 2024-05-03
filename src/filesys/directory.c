@@ -23,7 +23,7 @@ struct dir_entry {
 
 /* Creates a directory with space for ENTRY_CNT entries in the
    given SECTOR.  Returns true if successful, false on failure. */
-bool dir_create(block_sector_t sector, size_t entry_cnt) {
+bool dir_create(block_sector_t sector, size_t entry_cnt, block_sector_t parent_sector) {
   if (!inode_create(sector, entry_cnt * sizeof(struct dir_entry), true)) {
     return false;
   }
@@ -38,10 +38,21 @@ bool dir_create(block_sector_t sector, size_t entry_cnt) {
     return false;
   }
 
-  // .. (points to itself atm, as root)
-  if (!dir_add(dir, "..", sector, true)) {
-    dir_close(dir);
-    return false;
+  // ..
+
+  if (parent_sector != NULL) {
+
+    if (!dir_add(dir, "..", parent_sector, true)) {
+      dir_close(dir);
+      return false;
+    }
+
+  } else {
+    // point to itself if root
+    if (!dir_add(dir, "..", sector, true)) {
+      dir_close(dir);
+      return false;
+    }
   }
 
   return true;
@@ -449,6 +460,11 @@ bool get_parent_dir(const char* path, struct dir** parent_dir) {
     current_dir = next_dir;
   }
 
+  if (strlen(path) == 1 && path[0] == '/') {
+    *parent_dir = current_dir;
+    return true;
+  }
+
   dir_close(current_dir);
   return false;
 }
@@ -495,4 +511,10 @@ bool dir_is_empty(struct inode* inode) {
   }
   dir_close(subdir);
   return true;
+}
+
+bool dir_is_cwd(struct inode* inode) {
+
+  struct thread* cur = thread_current();
+  return inode == dir_get_inode(cur->pcb->cwd);
 }
