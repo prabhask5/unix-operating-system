@@ -96,7 +96,7 @@ struct file* filesys_open(const char* path) {
     dir_close(dir);
     return NULL;
   }
-
+  dir_close(dir);
   return file_open(inode);
 }
 
