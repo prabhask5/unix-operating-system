@@ -10,6 +10,10 @@
 
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
+#define LAST_DIRECT_POINTER_INDEX 119
+#define LAST_INDIRECT_POINTER_INDEX 1
+#define LAST_DOUBLY_INDIRECT_POINTER_INDEX 2
+#define LAST_CHILD_BLOCK_POINTER_INDEX 127
 
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
@@ -186,14 +190,15 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
       struct indirect_block* doubly_indirect_block = NULL;
       struct indirect_block* indirect_block = NULL;
 
-      if (last_didb == 2 && last_idb == 127 &&
-          last_db == 127) { // special case: we ran out of space, too bad
+      if (last_didb == LAST_DOUBLY_INDIRECT_POINTER_INDEX &&
+          last_idb == LAST_CHILD_BLOCK_POINTER_INDEX &&
+          last_db == LAST_CHILD_BLOCK_POINTER_INDEX) { // special case: we ran out of space, too bad
         free(disk_node);
         return -1;
       } else if (
-          last_idb == 127 &&
+          last_idb == LAST_CHILD_BLOCK_POINTER_INDEX &&
           last_db ==
-              127) { // general special case: since last allocated indirect block is the last one in this doubly indirect block, we move to the next doubly indirect block
+              LAST_CHILD_BLOCK_POINTER_INDEX) { // general special case: since last allocated indirect block is the last one in this doubly indirect block, we move to the next doubly indirect block
         bool new_doubly_indirect_allocation_success =
             free_map_allocate(1, &disk_node->doubly_indirect_pointers[last_didb + 1]);
         success = success && new_doubly_indirect_allocation_success;
@@ -241,7 +246,7 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
         last_db = 0;
       } else if (
           last_db ==
-          127) { // special general case: since last allocated direct block is the last one in this indirect block, we move to the next indirect block
+          LAST_CHILD_BLOCK_POINTER_INDEX) { // special general case: since last allocated direct block is the last one in this indirect block, we move to the next indirect block
         doubly_indirect_block = malloc(BLOCK_SECTOR_SIZE);
         bool dib_malloc_success = doubly_indirect_block != NULL;
         success = success && doubly_indirect_block != NULL;
@@ -319,9 +324,9 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
       bool success = true;
       struct indirect_block* indirect_block = NULL;
 
-      if (last_idb == 2 &&
+      if (last_idb == LAST_INDIRECT_POINTER_INDEX &&
           last_db ==
-              127) { // special case: since last allocated indirect & direct block is the last one, we know need to allocate a doubly indirect block
+              LAST_CHILD_BLOCK_POINTER_INDEX) { // special case: since last allocated indirect & direct block is the last one, we know need to allocate a doubly indirect block
         bool new_doubly_indirect_allocation_success =
             free_map_allocate(1, &disk_node->doubly_indirect_pointers[0]);
         success = success && new_doubly_indirect_allocation_success;
@@ -369,7 +374,7 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
         last_db = 0;
       } else if (
           last_db ==
-          127) { // special general case: since last allocated direct block is the last one in this indirect block, we move to the next indirect block
+          LAST_CHILD_BLOCK_POINTER_INDEX) { // special general case: since last allocated direct block is the last one in this indirect block, we move to the next indirect block
         bool new_indirect_allocation_success =
             free_map_allocate(1, &disk_node->indirect_pointers[last_idb + 1]);
         success = success && new_indirect_allocation_success;
@@ -426,7 +431,7 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
       bool success = true;
 
       if (last_db ==
-          119) { // special case: since last allocated direct block is the last one, we now need to allocate an indirect block
+          LAST_DIRECT_POINTER_INDEX) { // special case: since last allocated direct block is the last one, we now need to allocate an indirect block
         bool new_indirect_allocation_success =
             free_map_allocate(1, &disk_node->indirect_pointers[0]);
         success = new_indirect_allocation_success;
