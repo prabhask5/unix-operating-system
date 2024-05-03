@@ -229,6 +229,7 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
         success = success && doubly_indirect_block != NULL;
         bool ib_malloc_success = false;
         bool new_indirect_allocation_success = false;
+        bool new_direct_allocation_success = false;
 
         if (success) {
           new_indirect_allocation_success =
@@ -240,7 +241,8 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
         }
 
         if (success) {
-          success = success && free_map_allocate(1, &indirect_block->children[0]);
+          new_direct_allocation_success = free_map_allocate(1, &indirect_block->children[0]);
+          success = success && new_direct_allocation_success;
         }
 
         if (!success) {
@@ -248,6 +250,8 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
             free_map_release(disk_node->doubly_indirect_pointers[last_didb + 1], 1);
           if (new_indirect_allocation_success)
             free_map_release(doubly_indirect_block->children[0], 1);
+          if (new_direct_allocation_success)
+            free_map_release(indirect_block->children[0], 1);
           if (dib_malloc_success)
             free(doubly_indirect_block);
           if (ib_malloc_success)
@@ -274,6 +278,7 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
         success = success && doubly_indirect_block != NULL;
         bool ib_malloc_success = false;
         bool new_indirect_allocation_success = false;
+        bool new_direct_allocation_success = false;
 
         if (success) {
           block_read(fs_device, disk_node->doubly_indirect_pointers[last_didb],
@@ -287,12 +292,15 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
         }
 
         if (success) {
-          success = success && free_map_allocate(1, &indirect_block->children[0]);
+          new_direct_allocation_success = free_map_allocate(1, &indirect_block->children[0]);
+          success = success && new_direct_allocation_success;
         }
 
         if (!success) {
           if (new_indirect_allocation_success)
             free_map_release(doubly_indirect_block->children[last_idb + 1], 1);
+          if (new_direct_allocation_success)
+            free_map_release(indirect_block->children[0], 1);
           if (dib_malloc_success)
             free(doubly_indirect_block);
           if (ib_malloc_success)
@@ -316,15 +324,20 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
         bool dib_malloc_success = doubly_indirect_block != NULL;
         bool ib_malloc_success = indirect_block != NULL;
         success = success && doubly_indirect_block != NULL && indirect_block != NULL;
+        bool new_direct_allocation_success = false;
 
         if (success) {
-          block_read(fs_device, disk_node->doubly_indirect_pointers[last_didb],
-                     (void*)doubly_indirect_block);
-          block_read(fs_device, doubly_indirect_block->children[last_idb], (void*)indirect_block);
-          success = success && free_map_allocate(1, &indirect_block->children[last_db + 1]);
+          smart_block_read(disk_node->doubly_indirect_pointers[last_didb],
+                           (void*)doubly_indirect_block);
+          smart_block_read(doubly_indirect_block->children[last_idb], (void*)indirect_block);
+          new_direct_allocation_success =
+              free_map_allocate(1, &indirect_block->children[last_db + 1]);
+          success = success && new_direct_allocation_success;
         }
 
         if (!success) {
+          if (new_direct_allocation_success)
+            free_map_release(indirect_block->children[last_db + 1], 1);
           if (dib_malloc_success)
             free(doubly_indirect_block);
           if (ib_malloc_success)
@@ -357,6 +370,7 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
         success = success && doubly_indirect_block != NULL;
         bool ib_malloc_success = false;
         bool new_indirect_allocation_success = false;
+        bool new_direct_allocation_success = false;
 
         if (success) {
           new_indirect_allocation_success =
@@ -368,7 +382,8 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
         }
 
         if (success) {
-          success = success && free_map_allocate(1, &indirect_block->children[0]);
+          new_direct_allocation_success = free_map_allocate(1, &indirect_block->children[0]);
+          success = success && new_direct_allocation_success;
         }
 
         if (!success) {
@@ -376,6 +391,8 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
             free_map_release(disk_node->doubly_indirect_pointers[0], 1);
           if (new_indirect_allocation_success)
             free_map_release(doubly_indirect_block->children[0], 1);
+          if (new_direct_allocation_success)
+            free_map_release(indirect_block->children[0], 1);
           if (dib_malloc_success)
             free(doubly_indirect_block);
           if (ib_malloc_success)
@@ -403,14 +420,18 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
         indirect_block = calloc(1, BLOCK_SECTOR_SIZE);
         bool malloc_success = indirect_block != NULL;
         success = success && indirect_block != NULL;
+        bool new_direct_allocation_success = false;
 
         if (success) {
-          success = success && free_map_allocate(1, &indirect_block->children[0]);
+          new_direct_allocation_success = free_map_allocate(1, &indirect_block->children[0]);
+          success = success && new_direct_allocation_success;
         }
 
         if (!success) {
           if (new_indirect_allocation_success)
             free_map_release(disk_node->indirect_pointers[last_idb + 1], 1);
+          if (new_direct_allocation_success)
+            free_map_release(indirect_block->children[0], 1);
           if (malloc_success)
             free(indirect_block);
           free(disk_node);
@@ -428,13 +449,18 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
         indirect_block = malloc(BLOCK_SECTOR_SIZE);
         bool malloc_success = indirect_block != NULL;
         success = indirect_block != NULL;
+        bool new_direct_allocation_success = false;
 
         if (success) {
-          block_read(fs_device, disk_node->indirect_pointers[last_idb], (void*)indirect_block);
-          success = success && free_map_allocate(1, &indirect_block->children[last_db + 1]);
+          smart_block_read(disk_node->indirect_pointers[last_idb], (void*)indirect_block);
+          new_direct_allocation_success =
+              free_map_allocate(1, &indirect_block->children[last_db + 1]);
+          success = success && new_direct_allocation_success;
         }
 
         if (!success) {
+          if (new_direct_allocation_success)
+            free_map_release(indirect_block->children[last_db + 1], 1);
           if (malloc_success)
             free(indirect_block);
           free(disk_node);
@@ -460,14 +486,18 @@ static int resize(block_sector_t inode_sector, size_t num_blocks) {
         struct indirect_block* indirect_block = calloc(1, BLOCK_SECTOR_SIZE);
         bool malloc_success = indirect_block != NULL;
         success = success && indirect_block != NULL;
+        bool new_direct_allocation_success = false;
 
         if (success) {
-          success = success && free_map_allocate(1, &indirect_block->children[0]);
+          new_direct_allocation_success = free_map_allocate(1, &indirect_block->children[0]);
+          success = success && new_direct_allocation_success;
         }
 
         if (!success) {
           if (new_indirect_allocation_success)
             free_map_release(disk_node->indirect_pointers[0], 1);
+          if (new_direct_allocation_success)
+            free_map_release(indirect_block->children[0], 1);
           if (malloc_success)
             free(indirect_block);
           free(disk_node);
