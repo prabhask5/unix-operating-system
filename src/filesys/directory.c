@@ -436,13 +436,7 @@ bool get_parent_dir(const char* path, struct dir** parent_dir) {
 
     // If the part cannot be found and it's not the last part, fail
     struct inode* inode = NULL;
-    if (!dir_lookup(current_dir, part, &inode)) {
-      dir_close(current_dir);
-      return false;
-    }
-
-    // If part is a file and it's not the last part, fail
-    if (!inode_is_dir(inode)) {
+    if (!dir_lookup(current_dir, part, &inode) || !inode_is_dir(inode)) {
       dir_close(current_dir);
       return false;
     }
