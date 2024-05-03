@@ -368,8 +368,15 @@ bool parse_path(const char* path, struct dir** dir_path, char* final_name) {
       // Handle the final part
       strlcpy(final_name, part, NAME_MAX + 1);
       *dir_path = dir; // Assign the directory correctly for the final part
-      if (inode)
-        inode_close(inode);
+
+      if (inode) {
+        if (inode_is_dir(inode)) {
+          *dir_path = dir_open(inode);
+        }
+      } else {
+        *dir_path = dir;
+      }
+
       return true;
     }
 
