@@ -76,25 +76,16 @@ bool filesys_create(const char* path, off_t initial_size) {
    or if an internal memory allocation fails. */
 struct file* filesys_open(const char* name) {
 
-  // struct dir* dir;
-
-  // if (!thread_current()->pcb->cwd) {
-  //   dir = dir_open_root();
-  // } else {
-  //   dir = dir_reopen(thread_current()->pcb->cwd);
-  // }
-
   struct dir* dir = NULL;
-
   if (!get_parent_dir(name, &dir)) {
     return false;
   }
 
   struct inode* inode = NULL;
-
-  if (dir != NULL)
-    dir_lookup(dir, name, &inode);
-  // dir_close(dir);
+  if (!dir_lookup(dir, name, &inode)) {
+    dir_close(dir);
+    return NULL;
+  }
 
   return file_open(inode);
 }

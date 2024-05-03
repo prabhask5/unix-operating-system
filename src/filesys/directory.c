@@ -454,61 +454,31 @@ bool get_parent_dir(const char* path, struct dir** parent_dir) {
 }
 
 bool get_dir_from_path(const char* path, struct dir** dir_path) {
-  if (path == NULL || dir_path == NULL) {
+
+  struct dir* parent_dir = NULL;
+  if (!get_parent_dir(path, &parent_dir)) {
     return false;
   }
 
-  char part[NAME_MAX + 1];
-  struct dir* dir;
+  // Get the final name
+  char name[NAME_MAX + 1];
+  char* src = path;
+  while (get_next_part(name, &src) == 1) {
+  }
+
+  // Get the final dir
   struct inode* inode = NULL;
-
-  if (path[0] == '/' || !thread_current()->pcb->cwd) {
-    dir = dir_open_root();
-  } else {
-    dir = dir_reopen(thread_current()->pcb->cwd);
-  }
-
-  if (dir == NULL) {
+  if (!dir_lookup(parent_dir, name, &inode)) {
+    dir_close(parent_dir);
     return false;
   }
 
-  const char* src = path;
-  bool last_part = false;
-  struct dir* last_dir = dir;
-
-  while (get_next_part(part, &src) == 1) {
-    last_part = (*src == '\0');
-
-    if (!dir_lookup(dir, part, &inode)) {
-      dir_close(last_dir);
-      return false;
-    }
-
-    if (last_part) {
-      if (inode) {
-        inode_close(inode);
-      }
-      dir_close(last_dir);
-      return false;
-    }
-
-    if (!inode_is_dir(inode)) {
-      inode_close(inode);
-      dir_close(last_dir);
-      return false;
-    }
-
-    struct dir* next_dir = dir_open(inode);
-    inode_close(inode);
-    dir_close(last_dir);
-
-    if (next_dir == NULL) {
-      return false;
-    }
-
-    last_dir = next_dir;
+  if (!inode_is_dir(inode)) {
+    dir_close(parent_dir);
+    return false;
   }
 
-  *dir_path = last_dir;
+  *dir_path = dir_open(inode);
+  dir_close(parent_dir);
   return true;
 }
