@@ -373,8 +373,6 @@ bool parse_path(const char* path, struct dir** dir_path, char* final_name) {
         if (inode_is_dir(inode)) {
           *dir_path = dir_open(inode);
         }
-      } else {
-        *dir_path = dir;
       }
 
       return true;
