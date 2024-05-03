@@ -409,65 +409,53 @@ bool parse_path(const char* path, struct dir** dir_path, char* final_name) {
   return false;
 }
 
-bool get_parent_dir(const char* path, struct dir** dir_path) {
-  if (path == NULL || dir_path == NULL)
+bool get_parent_dir(const char* path, struct dir** parent_dir) {
+  if (path == NULL || parent_dir == NULL)
+    return false;
+
+  // Determine starting directory based on path or current working director
+  struct dir* current_dir;
+  if (path[0] == '/' || !thread_current()->pcb->cwd)
+    current_dir = dir_open_root();
+  else
+    current_dir = dir_reopen(thread_current()->pcb->cwd);
+
+  if (current_dir == NULL)
     return false;
 
   char part[NAME_MAX + 1];
-  struct dir* dir;
-  struct inode* inode = NULL;
-
-  // Determine starting directory based on path or current working directory
-  if (path[0] == '/' || !thread_current()->pcb->cwd)
-    dir = dir_open_root();
-  else
-    dir = dir_reopen(thread_current()->pcb->cwd);
-
-  if (dir == NULL)
-    return false;
-
   const char* src = path;
-  bool last_part = false;
-
   while (get_next_part(part, &src) == 1) {
-    last_part = (*src == '\0');
 
-    // Attempt to look up the part in the current directory
-    if (!dir_lookup(dir, part, &inode)) {
-      // If the part cannot be found and it's not the last part, fail
-      if (!last_part) {
-        dir_close(dir);
-        return false;
-      }
-    }
-
-    if (inode && !last_part && !inode_is_dir(inode)) {
-      // If part is a file and it's not the last part, fail
-      inode_close(inode);
-      dir_close(dir);
-      return false;
-    }
-
-    if (last_part) {
-      // Handle the final part
-
-      *dir_path = dir; // Assign the directory correctly for the final part
-
+    bool is_last_part = (*src == '\0');
+    if (is_last_part) {
+      // Return the current directory as the parent directory
+      *parent_dir = current_dir;
       return true;
     }
 
-    // Prepare for the next iteration
-    if (inode) {
-      struct dir* next_dir = dir_open(inode);
-      inode_close(inode);
-      dir_close(dir);
-      if (next_dir == NULL)
-        return false;
-      dir = next_dir;
+    // If the part cannot be found and it's not the last part, fail
+    struct inode* inode = NULL;
+    if (!dir_lookup(current_dir, part, &inode)) {
+      dir_close(current_dir);
+      return false;
     }
+
+    // If part is a file and it's not the last part, fail
+    if (!inode_is_dir(inode)) {
+      dir_close(current_dir);
+      return false;
+    }
+
+    // Prepare for the next iteration
+    struct dir* next_dir = dir_open(inode);
+    dir_close(current_dir);
+    if (next_dir == NULL)
+      return false;
+    current_dir = next_dir;
   }
 
-  dir_close(dir);
+  dir_close(current_dir);
   return false;
 }
 

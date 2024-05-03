@@ -128,18 +128,28 @@ static void do_format(void) {
 
 bool filesys_mkdir(const char* path) {
   block_sector_t inode_sector = 0;
-  struct dir* dir = NULL;
-  char final_name[NAME_MAX + 1];
 
-  if (!parse_path(path, &dir, final_name)) {
-    return false;
+  // Get the name of the new directory
+  char name[NAME_MAX + 1];
+  char* src = path;
+  while (get_next_part(name, &src) == 1) {
   }
 
-  bool success = (dir != NULL && free_map_allocate(1, &inode_sector) &&
-                  dir_create(inode_sector, 1024) && dir_add(dir, final_name, inode_sector, true));
+  // Get the parent dir
+  struct dir* parent_dir = NULL;
+  if (!get_parent_dir(path, &parent_dir))
+    return false;
+
+  // Check that the child does not exist
+  struct inode* inode = NULL;
+  if (dir_lookup(parent_dir, name, &inode))
+    return false;
+
+  bool success = (free_map_allocate(1, &inode_sector) && dir_create(inode_sector, 1024) &&
+                  dir_add(parent_dir, name, inode_sector, true));
   if (!success && inode_sector != 0)
     free_map_release(inode_sector, 1);
-  dir_close(dir);
+  dir_close(parent_dir);
 
   return success;
 }
