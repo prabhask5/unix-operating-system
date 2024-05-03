@@ -307,54 +307,8 @@ struct inode* path_to_inode(const char* path) {
     }
   }
 
-  // inode should point to the final segment now
-  if (dir != NULL) {
-    dir_close(dir);
-  }
-
-  return inode;
+  return dir;
 }
-
-// struct dir* path_to_dir(const char* path) {
-//   struct dir* dir = NULL;
-//   struct inode* inode = NULL;
-
-//   if (path == NULL || strlen(path) == 0)
-//     return NULL;
-
-//   if (path[0] == '/') {
-//     dir = dir_open_root();
-//   } else {
-//     dir = dir_reopen(thread_current()->cwd);
-//   }
-
-//   if (dir == NULL)
-//     return NULL;
-
-//   char part[NAME_MAX + 1];
-//   const char* next_part = path;
-//   struct dir* parent_dir = dir;
-
-//   while (get_next_part(part, &next_part) == 1) {
-//     if (*next_part == '\0') {
-
-//       return parent_dir;
-//     }
-
-//     if (!dir_lookup(dir, part, &inode) || !inode_is_dir(inode)) {
-//       dir_close(parent_dir);
-//       if (inode != NULL)
-//         inode_close(inode);
-//       return NULL;
-//     }
-
-//     dir_close(parent_dir);
-//     parent_dir = dir_open(inode);
-//     inode_close(inode);
-//   }
-
-//   return parent_dir;
-// }
 
 /* helper, given a/b/c, it puts a pointer to a/b in dir_path, and c as a char into final name.
 
@@ -363,17 +317,24 @@ if any part in the dir_path doesn't exist or is not a dir, it returns false
 
 */
 
+/*loop through parts. If it's not the final part, and it's either a file or not existent, return false. 
+
+put the name of the final part inside final_name. if the final part is a dir that exists, point dir_path to it, 
+otherwise dir_path should point to the dir until this last part, e.g. a/b/file should have dir path pointing to a/b
+
+
+*/
+
 bool parse_path(const char* path, struct dir** dir_path, char* final_name) {
   if (path == NULL || dir_path == NULL || final_name == NULL)
     return false;
 
-  const char* src = path;
   char part[NAME_MAX + 1];
-  struct dir* dir = NULL;
+  struct dir* dir;
   struct inode* inode = NULL;
 
-  // root if absolute
-  if (*src == '/' || !thread_current()->pcb->cwd)
+  // Determine starting directory based on path or current working directory
+  if (path[0] == '/' || !thread_current()->pcb->cwd)
     dir = dir_open_root();
   else
     dir = dir_reopen(thread_current()->pcb->cwd);
@@ -381,46 +342,48 @@ bool parse_path(const char* path, struct dir** dir_path, char* final_name) {
   if (dir == NULL)
     return false;
 
-  struct dir* prev_dir = NULL;
-  bool success = true;
+  const char* src = path;
+  bool last_part = false;
 
   while (get_next_part(part, &src) == 1) {
-    // last part
-    if (*src == '\0') {
+    last_part = (*src == '\0');
+
+    // Attempt to look up the part in the current directory
+    if (!dir_lookup(dir, part, &inode)) {
+      // If the part cannot be found and it's not the last part, fail
+      if (!last_part) {
+        dir_close(dir);
+        return false;
+      }
+    }
+
+    if (inode && !last_part && !inode_is_dir(inode)) {
+      // If part is a file and it's not the last part, fail
+      inode_close(inode);
+      dir_close(dir);
+      return false;
+    }
+
+    if (last_part) {
+      // Handle the final part
       strlcpy(final_name, part, NAME_MAX + 1);
-      *dir_path = dir; // set dir ptr to dir uptill this part, so a/b<- /c
+      *dir_path = dir; // Assign the directory correctly for the final part
+      if (inode)
+        inode_close(inode);
       return true;
     }
 
-    // does next part exist?
-    if (!dir_lookup(dir, part, &inode)) {
-      success = false;
-      break;
-    }
-
-    // is it a directory and not a file?
-    if (inode != NULL && !inode_is_dir(inode)) {
+    // Prepare for the next iteration
+    if (inode) {
+      struct dir* next_dir = dir_open(inode);
       inode_close(inode);
-      success = false;
-      break;
+      dir_close(dir);
+      if (next_dir == NULL)
+        return false;
+      dir = next_dir;
     }
-
-    prev_dir = dir;        // save a pointer to prev dir so we can close
-    dir = dir_open(inode); // the current dir is now the new part of the path
-    if (dir == NULL) {
-      inode_close(inode);
-      success = false;
-      break;
-    }
-
-    inode_close(inode);
-    dir_close(prev_dir);
   }
 
-  if (!success) {
-    dir_close(dir);
-    return false;
-  }
-
-  return true;
+  dir_close(dir);
+  return false;
 }

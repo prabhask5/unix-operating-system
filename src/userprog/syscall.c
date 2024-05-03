@@ -344,7 +344,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       return;
     }
 
-    bool retval = filesys_create(args[1], args[2], false);
+    bool retval = filesys_create(args[1], args[2]);
 
     f->eax = retval;
     return;
@@ -544,13 +544,10 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       return;
     }
 
-    struct dir* new_dir = path_to_inode(args[1]);
-
-    if (!new_dir) {
-      return NULL;
+    if (!filesys_chdir(args[1])) {
+      f->eax = false;
+      return;
     }
-
-    thread_current()->pcb->cwd = new_dir;
 
     f->eax = true;
     return;
