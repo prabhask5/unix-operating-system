@@ -560,7 +560,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
       return;
     }
 
-    f->eax = filesys_mkdir(args[1], 1024);
+    f->eax = filesys_mkdir(args[1]);
     return;
   }
 
