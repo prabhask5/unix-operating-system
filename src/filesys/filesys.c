@@ -40,29 +40,31 @@ void filesys_done(void) {
    Returns true if successful, false otherwise.
    Fails if a file named NAME already exists,
    or if internal memory allocation fails. */
-bool filesys_create(const char* name, off_t initial_size) {
+bool filesys_create(const char* path, off_t initial_size) {
   block_sector_t inode_sector = 0;
-  struct dir* dir = NULL;
-  char final_name[NAME_MAX + 1];
 
-  if (!parse_path(name, &dir, final_name)) {
-    return false;
+  // Get the name of the new directory or file
+  char name[NAME_MAX + 1];
+  char* src = path;
+  while (get_next_part(name, &src) == 1) {
   }
 
-  // char* slash_pos = strrchr(name, '/');
-  // if (slash_pos != NULL) {
-  //   dir = path_to_dir(name);
-  //   name = slash_pos + 1;
-  // } else if (thread_current()->cwd != NULL) {
-  //   dir = dir_reopen(thread_current()->cwd);
-  // }
+  // Confirm the parent exists and get the parent's directory
+  struct dir* parent_dir = NULL;
+  if (!get_parent_dir(path, &parent_dir))
+    return false;
 
-  bool success = (dir != NULL && free_map_allocate(1, &inode_sector) &&
-                  inode_create(inode_sector, initial_size, false) &&
-                  dir_add(dir, final_name, inode_sector, false));
+  // Check that the child does not exist
+  struct inode* inode = NULL;
+  if (dir_lookup(parent_dir, name, &inode))
+    return false;
+
+  bool success =
+      (free_map_allocate(1, &inode_sector) && inode_create(inode_sector, initial_size, false) &&
+       dir_add(parent_dir, name, inode_sector, false));
   if (!success && inode_sector != 0)
     free_map_release(inode_sector, 1);
-  dir_close(dir);
+  dir_close(parent_dir);
 
   return success;
 }
