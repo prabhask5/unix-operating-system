@@ -146,9 +146,8 @@ bool filesys_mkdir(const char* path) {
 
 bool filesys_chdir(const char* name) {
   struct dir* dir = NULL;
-  char final_name[NAME_MAX + 1];
 
-  if (!parse_path(name, &dir, final_name)) {
+  if (!get_dir_from_path(name, &dir)) {
     return false;
   }
 
