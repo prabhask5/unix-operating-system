@@ -99,15 +99,35 @@ struct file* filesys_open(const char* path) {
    Returns true if successful, false on failure.
    Fails if no file named NAME exists,
    or if an internal memory allocation fails. */
-bool filesys_remove(const char* name) {
-  struct dir* dir = NULL;
+bool filesys_remove(const char* path) {
 
-  if (!get_parent_dir(name, &dir)) {
+  struct dir* parent_dir = NULL;
+  if (!get_parent_dir(path, &parent_dir)) {
     return false;
   }
 
-  bool success = dir != NULL && dir_remove(dir, name);
-  dir_close(dir);
+  // Get the name of the base file
+  char name[NAME_MAX + 1];
+  char* src = path;
+  while (get_next_part(name, &src) == 1) {
+  }
+
+  struct inode* inode = NULL;
+  if (!dir_lookup(parent_dir, name, &inode)) {
+    inode_close(inode);
+    dir_close(parent_dir);
+    return false;
+  }
+
+  // If it is a directory check to make sure its empty
+  if (inode_is_dir(inode) && !dir_is_empty(inode)) {
+    inode_close(inode);
+    dir_close(parent_dir);
+    return false;
+  }
+
+  bool success = dir_remove(parent_dir, name);
+  dir_close(parent_dir);
 
   return success;
 }

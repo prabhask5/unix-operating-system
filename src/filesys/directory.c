@@ -483,9 +483,9 @@ bool get_dir_from_path(const char* path, struct dir** dir_path) {
   return true;
 }
 
-bool dir_is_empty(struct dir* dir) {
+bool dir_is_empty(struct inode* inode) {
   char name[NAME_MAX + 1];
-  struct dir* subdir = dir_reopen(dir);
+  struct dir* subdir = dir_open(inode);
   while (dir_readdir(subdir, name)) {
     if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
       continue;
