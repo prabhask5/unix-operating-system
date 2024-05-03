@@ -563,4 +563,87 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     f->eax = filesys_mkdir(args[1], 1024);
     return;
   }
+
+  else if (args[0] == SYS_ISDIR) {
+    // !!!!UNTESTED
+    if (!syscall_validate_word(args + 1)) {
+      f->eax = false;
+      return;
+    }
+
+    struct list* fdt = &thread_current()->pcb->fdt;
+
+    struct file_descriptor_elem* fd = NULL;
+    for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
+      struct file_descriptor_elem* temp_fd = list_entry(e, struct file_descriptor_elem, elem);
+      if (temp_fd->id == args[1])
+        fd = temp_fd;
+    }
+
+    struct inode* inode = file_get_inode(fd->f);
+    if (!inode) {
+      f->eax = false;
+      return;
+    }
+
+    f->eax = inode_is_dir(inode);
+    return;
+  } else if (args[0] == SYS_INUMBER) {
+
+    if (!syscall_validate_word(args + 1)) {
+      f->eax = -1;
+      return;
+    }
+
+    struct list* fdt = &thread_current()->pcb->fdt;
+
+    struct file_descriptor_elem* fd = NULL;
+    for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
+      struct file_descriptor_elem* temp_fd = list_entry(e, struct file_descriptor_elem, elem);
+      if (temp_fd->id == args[1])
+        fd = temp_fd;
+    }
+
+    struct inode* inode = file_get_inode(fd->f);
+    if (!inode) {
+      f->eax = -1;
+      return;
+    }
+
+    f->eax = inode_get_inumber(inode);
+    return;
+
+  }
+
+  else if (args[0] == SYS_READDIR) {
+
+    if (!syscall_validate_word(args + 1) || !syscall_validate_str(args + 2)) {
+      f->eax = false;
+      return;
+    }
+
+    struct list* fdt = &thread_current()->pcb->fdt;
+
+    struct file_descriptor_elem* fd = NULL;
+    for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
+      struct file_descriptor_elem* temp_fd = list_entry(e, struct file_descriptor_elem, elem);
+      if (temp_fd->id == args[1])
+        fd = temp_fd;
+    }
+
+    struct inode* inode = file_get_inode(fd->f);
+    if (!inode) {
+      f->eax = false;
+      return;
+    }
+
+    if (!inode_is_dir(inode)) {
+      f->eax = false;
+      return;
+    }
+
+    f->eax = dir_readdir(fd->f, args[2]);
+
+    return;
+  }
 }

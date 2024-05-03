@@ -325,6 +325,22 @@ otherwise dir_path should point to the dir until this last part, e.g. a/b/file s
 
 */
 
+// get parent dir
+
+// get's the parent dir of the name of the file that's passed in, if the file exists
+
+/*
+
+input: 'a/b/c'
+we're in a/b and c exists
+
+return ptr to a/b
+
+
+*/
+
+// get dir ptr
+
 bool parse_path(const char* path, struct dir** dir_path, char* final_name) {
   if (path == NULL || dir_path == NULL || final_name == NULL)
     return false;
