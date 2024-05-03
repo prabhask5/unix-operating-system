@@ -215,6 +215,15 @@ static void start_process(void** args) {
     }
   }
 
+  // CWD setup
+
+  // parent's CWD, else root
+  if (parent_pcb->cwd != NULL) {
+    t->pcb->cwd = dir_reopen(parent_pcb->cwd);
+  } else {
+    t->pcb->cwd = dir_open_root();
+  }
+
   /* Initialize interrupt frame and load executable. */
   if (success) {
     memset(&if_, 0, sizeof if_);
@@ -228,15 +237,6 @@ static void start_process(void** args) {
     asm volatile("finit");
     asm volatile("fsave (%0)" ::"g"(&if_.fpu) : "memory");
     asm volatile("frstor (%0)" ::"g"(curr_fpu_state) : "memory");
-  }
-
-  // CWD setup
-
-  // parent's CWD, else root
-  if (parent_pcb->cwd != NULL) {
-    t->pcb->cwd = dir_reopen(parent_pcb->cwd);
-  } else {
-    t->pcb->cwd = dir_open_root();
   }
 
   // Confirm t->pcb->cwd->inode->data->dir is true
