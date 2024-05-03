@@ -559,4 +559,23 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
         break;
     }
   }
+  
+   else if (args[0] == SYS_INUMBER) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    struct list* fdt = &thread_current()->pcb->fdt;
+
+    for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
+      struct file_descriptor_elem* fd = list_entry(e, struct file_descriptor_elem, elem);
+      if (fd->id == args[1]) {
+        f->eax = inode_get_inumber(fd->f->inode);
+        return
+      }
+    }
+
+    f->eax = -1;
+    return;
 }
