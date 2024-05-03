@@ -316,7 +316,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
           fd = temp_fd;
       }
 
-      if (fd == NULL) {
+      if (fd == NULL || inode_is_dir(file_get_inode(fd->f))) {
         f->eax = -1;
         return;
       }
