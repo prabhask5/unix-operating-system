@@ -74,11 +74,16 @@ bool filesys_create(const char* path, off_t initial_size) {
    otherwise.
    Fails if no file named NAME exists,
    or if an internal memory allocation fails. */
-struct file* filesys_open(const char* name) {
+struct file* filesys_open(const char* path) {
 
   struct dir* dir = NULL;
-  if (!get_parent_dir(name, &dir)) {
+  if (!get_parent_dir(path, &dir)) {
     return false;
+  }
+
+  char name[NAME_MAX + 1];
+  char* src = path;
+  while (get_next_part(name, &src) == 1) {
   }
 
   struct inode* inode = NULL;
