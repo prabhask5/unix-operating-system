@@ -791,9 +791,9 @@ void inode_remove(struct inode* inode) {
 /* Resize file by "num_blocks" blocks by allocating one in inode tree, also zeros out new block before use, return the last block allocated since this is the block we are writing to at the offset */
 static int inode_resize(struct inode* inode, size_t num_blocks) {
   lock_acquire(&inode->inode_lock);
-  block_sector_t ret_sector = resize(inode->sector, num_blocks);
+  int res = resize(inode->sector, num_blocks);
   lock_release(&inode->inode_lock);
-  return ret_sector;
+  return res;
 }
 
 static void set_file_length(struct inode* inode, off_t new_length) {
