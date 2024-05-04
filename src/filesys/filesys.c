@@ -139,6 +139,7 @@ bool filesys_remove(const char* path) {
     return false;
   }
 
+  inode_close(inode);
   bool success = dir_remove(parent_dir, name);
   dir_close(parent_dir);
 
@@ -175,7 +176,7 @@ bool filesys_mkdir(const char* path) {
     return false;
 
   bool success = (free_map_allocate(1, &inode_sector) &&
-                  dir_create(inode_sector, 128, inode_get_inumber(dir_get_inode(parent_dir))) &&
+                  dir_create(inode_sector, 16, inode_get_inumber(dir_get_inode(parent_dir))) &&
                   dir_add(parent_dir, name, inode_sector, true));
   if (!success && inode_sector != 0)
     free_map_release(inode_sector, 1);
