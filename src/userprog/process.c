@@ -46,10 +46,6 @@ void userprog_init(void) {
      can come at any time and activate our pagedir */
   t->pcb = calloc(sizeof(struct process), 1);
   success = t->pcb != NULL;
-  t->pcb->main_thread = t;
-  // t->pcb->cwd = dir_open_root();
-
-  list_init(&(t->pcb->children_exit_code_data));
 
   /* Kill the kernel if we did not succeed */
   ASSERT(success);
@@ -247,11 +243,6 @@ static void start_process(void** args) {
     asm volatile("fsave (%0)" ::"g"(&if_.fpu) : "memory");
     asm volatile("frstor (%0)" ::"g"(curr_fpu_state) : "memory");
   }
-
-  // Confirm t->pcb->cwd->inode->data->dir is true
-  // if(!t->pcb->cwd->inode->data->dir){
-  //   *NULL;
-  // }
 
   /* Handle failure with succesful PCB malloc. Must free the PCB */
   if (!success && pcb_success) {

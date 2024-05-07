@@ -13,8 +13,6 @@
 #include "filesys/inode.h"
 #include <string.h>
 #include <stdlib.h>
-// Global syscall lock
-struct lock syscall_lock;
 
 static void syscall_handler(struct intr_frame*);
 static bool is_valid_addr(void* addr);
@@ -448,6 +446,53 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     f->eax = sys_sum_to_e(args[1]);
   }
 
+  else if (args[0] == SYS_RESET_CACHE) {
+    reset_cache();
+  }
+
+  else if (args[0] == SYS_GET_CACHE_INFO) {
+    switch (args[1]) {
+      case 0:
+        /* cache hits */
+        f->eax = get_cache_hits();
+        break;
+      case 1:
+        /* cache miss */
+        f->eax = get_cache_misses();
+        break;
+      case 2:
+        /* read count */
+        f->eax = get_read_count(fs_device);
+        break;
+      case 3:
+        /* write count */
+        f->eax = get_write_count(fs_device);
+        break;
+      default:
+        break;
+    }
+  }
+
+  else if (args[0] == SYS_INUMBER) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    struct list* fdt = &thread_current()->pcb->fdt;
+
+    for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
+      struct file_descriptor_elem* fd = list_entry(e, struct file_descriptor_elem, elem);
+      if (fd->id == args[1]) {
+        f->eax = inode_get_inumber(fd->f->inode);
+        return;
+      }
+    }
+
+    f->eax = -1;
+    return;
+  }
+
   else if (args[0] == SYS_CHDIR) {
     if (!syscall_validate_str(args + 1)) {
       f->eax = false;
@@ -498,31 +543,6 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     f->eax = inode_is_dir(inode);
     return;
-  } else if (args[0] == SYS_INUMBER) {
-
-    if (!syscall_validate_word(args + 1)) {
-      f->eax = -1;
-      return;
-    }
-
-    struct list* fdt = &thread_current()->pcb->fdt;
-
-    struct file_descriptor_elem* fd = NULL;
-    for (struct list_elem* e = list_begin(fdt); e != list_end(fdt); e = list_next(e)) {
-      struct file_descriptor_elem* temp_fd = list_entry(e, struct file_descriptor_elem, elem);
-      if (temp_fd->id == args[1])
-        fd = temp_fd;
-    }
-
-    struct inode* inode = file_get_inode(fd->f);
-    if (!inode) {
-      f->eax = -1;
-      return;
-    }
-
-    f->eax = inode_get_inumber(inode);
-    return;
-
   }
 
   else if (args[0] == SYS_READDIR) {
@@ -563,5 +583,73 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
 
     f->eax = found;
     return;
+  } else if (args[0] == SYS_PT_CREATE) {
+    if (!syscall_validate_word(args + 1) || !syscall_validate_word(args + 2) ||
+        !syscall_validate_word(args + 3)) {
+      process_exit(-1);
+      return;
+    }
+
+    f->eax = pthread_execute((stub_fun)args[1], (pthread_fun)args[2], (void*)args[3]);
+  } else if (args[0] == SYS_PT_EXIT) {
+    if (thread_current()->pcb && is_main_thread(thread_current(), thread_current()->pcb)) {
+      pthread_exit_main();
+    } else {
+      pthread_exit();
+    }
+  } else if (args[0] == SYS_PT_JOIN) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    f->eax = pthread_join((tid_t)args[1]);
+  } else if (args[0] == SYS_GET_TID) {
+    f->eax = thread_tid();
+  }
+
+  /* User synchronization syscalls */
+  else if (args[0] == SYS_LOCK_INIT) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    f->eax = user_lock_init(args[1]);
+  } else if (args[0] == SYS_LOCK_ACQUIRE) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    f->eax = user_lock_acquire(args[1]);
+  } else if (args[0] == SYS_LOCK_RELEASE) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    f->eax = user_lock_release(args[1]);
+  } else if (args[0] == SYS_SEMA_INIT) {
+    if (!syscall_validate_word(args + 1) || !syscall_validate_word(args + 2)) {
+      process_exit(-1);
+      return;
+    }
+
+    f->eax = user_sema_init(args[1], args[2]);
+  } else if (args[0] == SYS_SEMA_DOWN) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    f->eax = user_sema_down(args[1]);
+  } else if (args[0] == SYS_SEMA_UP) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    f->eax = user_sema_up(args[1]);
   }
 }
