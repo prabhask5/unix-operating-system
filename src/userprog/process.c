@@ -166,7 +166,6 @@ static void start_process(void** args) {
   /* Allocate process control block */
   struct process* new_pcb = malloc(sizeof(struct process));
   success = pcb_success = new_pcb != NULL;
-  struct thread_join_elem* tje = NULL;
 
   /* Initialize process control block */
   if (success) {
@@ -209,15 +208,6 @@ static void start_process(void** args) {
       tje->is_joining = false;
       sema_init(&tje->sema, 0);
     }
-  }
-
-  // CWD setup
-
-  // parent's CWD, else root
-  if (parent_pcb->cwd != NULL) {
-    t->pcb->cwd = dir_reopen(parent_pcb->cwd);
-  } else {
-    t->pcb->cwd = dir_open_root();
   }
 
   // CWD setup
