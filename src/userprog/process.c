@@ -166,6 +166,7 @@ static void start_process(void** args) {
   /* Allocate process control block */
   struct process* new_pcb = malloc(sizeof(struct process));
   success = pcb_success = new_pcb != NULL;
+  struct thread_join_elem* tje = NULL;
 
   /* Initialize process control block */
   if (success) {
