@@ -651,5 +651,12 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     }
 
     f->eax = user_sema_up(args[1]);
+  } else if (args[0] == SYS_SBRK) {
+    if (!syscall_validate_word(args + 1)) {
+      process_exit(-1);
+      return;
+    }
+
+    
   }
 }

@@ -103,13 +103,14 @@ struct thread {
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
 
-#ifdef USERPROG
   /* Owned by process.c. */
+  uint32_t* pagedir; /* Page directory. */
   struct process* pcb; /* Process control block if this thread is a userprog */
-#endif
 
   /* Owned by thread.c. */
   unsigned magic; /* Detects stack overflow. */
+  uint8_t* heap_start;
+  uint8_t* heap_break;
 };
 
 struct thread_join_elem {
