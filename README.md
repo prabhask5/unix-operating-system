@@ -12,6 +12,7 @@ Unix Operating System
 - Optimized file system with buffer cache to cache repeated reads/writes before writing to disk periodically, developed eviction algorithm using the Clock Replacement Algorithm
 - Utilized synchronization to make file system concurrency-safe
 - Implemented all fundamental system calls for concurrency, file system functionality, and running kernel mechanisms
+- Implemented custom block area memory allocator, with implementations for the sbrk system call, and implementations for malloc, free, realloc, and calloc based on fast block implementation.
 
 # Setup
 
